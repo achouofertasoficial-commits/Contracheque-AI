@@ -47,6 +47,17 @@ export interface Alerta {
   mensagem: string;
 }
 
+export interface ValidacaoMultipla {
+  status: "ok" | "erro" | "confirmacao_necessaria";
+  motivo: string;
+  mesma_competencia: boolean;
+  mesma_empresa: boolean;
+  mesmo_trabalhador: boolean;
+  documentos_relacionados: boolean;
+  deve_consolidar: boolean;
+  tipo_consolidacao: "unica" | "adiantamento_fechamento" | "pagamento_complementar" | "nao_consolidar";
+}
+
 export interface ContrachequeAnalise {
   id: string;
   uploadedAt: string;
@@ -59,6 +70,7 @@ export interface ContrachequeAnalise {
   itens: ItemContracheque[];
   alertas: Alerta[];
   resumo_ia: string;
+  validacao_multipla?: ValidacaoMultipla;
   metricas_calculadas?: {
     ganho_por_dia?: number | null;
     ganho_por_hora?: number | null;

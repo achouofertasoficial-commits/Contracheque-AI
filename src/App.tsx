@@ -62,6 +62,8 @@ export default function App() {
   // Callback when AI finishes scanning
   const [pendingResultsToConsolidate, setPendingResultsToConsolidate] = useState<any[] | null>(null);
   const [showCompetencyConflictDialog, setShowCompetencyConflictDialog] = useState(false);
+  const [validationErrorMessage, setValidationErrorMessage] = useState<string | null>(null);
+  const [showCaso4Confirmation, setShowCaso4Confirmation] = useState<boolean>(false);
 
   // Checks if results have different competencies
   const checkCompetenciesConflict = (results: any[]) => {
@@ -186,9 +188,64 @@ export default function App() {
     }
   };
 
+  const handleConfirmCaso4 = () => {
+    if (pendingResultsToConsolidate && pendingResultsToConsolidate.length >= 2) {
+      const consolidated = consolidateResults(pendingResultsToConsolidate);
+      if (consolidated) {
+        consolidated.validacao_multipla = {
+          status: "ok",
+          motivo: "Holerites de pagamento complementar consolidados após confirmação do usuário.",
+          mesma_competencia: true,
+          mesma_empresa: true,
+          mesmo_trabalhador: true,
+          documentos_relacionados: false,
+          deve_consolidar: true,
+          tipo_consolidacao: "pagamento_complementar"
+        };
+        setCurrentAnalysis(consolidated);
+      }
+      setShowCaso4Confirmation(false);
+      setPendingResultsToConsolidate(null);
+      setCurrentScreen('complement-analysis');
+    }
+  };
+
+  const handleCancelCaso4 = () => {
+    setShowCaso4Confirmation(false);
+    setPendingResultsToConsolidate(null);
+    setCurrentScreen('upload');
+  };
+
   const handleAnalysisComplete = (extractedResult: any) => {
     setIsLoading(false);
     if (extractedResult) {
+      const validacao = extractedResult.validacao_multipla;
+      
+      // Rigid validation flow based on server-side response
+      if (validacao) {
+        if (validacao.status === "erro") {
+          console.log(`[Contracheque AI Web] Validação falhou. Erro: ${validacao.motivo}`);
+          setValidationErrorMessage(validacao.motivo);
+          setCurrentScreen('upload');
+          return;
+        } else if (validacao.status === "confirmacao_necessaria") {
+          console.log(`[Contracheque AI Web] Validação indicou confirmação necessária para CASO 4.`);
+          setPendingResultsToConsolidate(extractedResult.results || []);
+          setShowCaso4Confirmation(true);
+          return;
+        } else if (validacao.status === "ok") {
+          console.log(`[Contracheque AI Web] Validação bem sucedida.`);
+          if (extractedResult.result) {
+            setCurrentAnalysis(extractedResult.result);
+          } else {
+            setCurrentAnalysis(extractedResult);
+          }
+          setCurrentScreen('complement-analysis');
+          return;
+        }
+      }
+
+      // Standalone/fallback pipeline
       if (extractedResult.multiple && Array.isArray(extractedResult.results)) {
         const results = extractedResult.results;
         if (results.length === 0) {
@@ -200,13 +257,11 @@ export default function App() {
           setCurrentAnalysis(results[0]);
           setCurrentScreen('complement-analysis');
         } else {
-          // Check for conflicts
           const hasConflict = checkCompetenciesConflict(results);
           if (hasConflict) {
-            setPendingResultsToConsolidate(results);
-            setShowCompetencyConflictDialog(true);
+            setValidationErrorMessage("Os holerites enviados pertencem a meses diferentes. Envie apenas holerites da mesma competência para gerar uma análise consolidada.");
+            setCurrentScreen('upload');
           } else {
-            // Unify same competency
             const consolidated = consolidateResults(results);
             setCurrentAnalysis(consolidated);
             setCurrentScreen('complement-analysis');
@@ -217,7 +272,6 @@ export default function App() {
         setCurrentScreen('complement-analysis');
       }
     } else {
-      // Backed out / Cancelled
       setIsLoading(false);
       setCurrentScreen('upload');
     }
@@ -450,6 +504,65 @@ export default function App() {
                 className="w-full bg-transparent hover:bg-rose-50 text-rose-600 font-bold py-2 text-[10px] rounded-xl transition-colors mt-2"
               >
                 Cancelar e Voltar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Validation Error Dialog Modal */}
+      {validationErrorMessage && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center z-50 p-4 animate-fadeIn">
+          <div className="bg-white rounded-3xl max-w-sm w-full p-6 shadow-2xl border border-slate-100 scale-95 animate-scaleUp text-center animate-pulse">
+            <div className="w-12 h-12 rounded-full bg-rose-50 flex items-center justify-center text-rose-600 mb-4 mx-auto">
+              <span className="material-symbols-outlined text-[24px]">gavel</span>
+            </div>
+            <h3 className="text-sm font-extrabold text-slate-900 mb-2">
+              Regra de Consolidação Rígida
+            </h3>
+            <p className="text-xs text-slate-600 leading-relaxed mb-6">
+              {validationErrorMessage}
+            </p>
+            <button
+              onClick={() => {
+                setValidationErrorMessage(null);
+                setCurrentScreen('upload');
+              }}
+              className="w-full bg-slate-900 hover:bg-slate-800 text-white font-bold py-3 text-xs rounded-xl shadow-xs transition-colors"
+            >
+              Entendido e Voltar
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Caso 4 Confirmation Modal */}
+      {showCaso4Confirmation && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center z-50 p-4 animate-fadeIn">
+          <div className="bg-white rounded-3xl max-w-sm w-full p-6 shadow-2xl border border-slate-100 scale-95 animate-scaleUp text-center">
+            <div className="w-12 h-12 rounded-full bg-indigo-50 flex items-center justify-center text-indigo-700 mb-4 mx-auto">
+              <span className="material-symbols-outlined text-[24px]">calculate</span>
+            </div>
+            <h3 className="text-sm font-extrabold text-slate-900 mb-2">
+              Holerites com Valores Diferentes
+            </h3>
+            <p className="text-xs text-slate-600 leading-relaxed mb-6">
+              Encontramos holerites do mesmo mês e da mesma empresa, mas com valores diferentes. Deseja analisar como pagamento complementar?
+            </p>
+            <div className="flex flex-col gap-2">
+              <button
+                onClick={handleConfirmCaso4}
+                className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-3 text-xs rounded-xl shadow-xs transition-colors flex items-center justify-center gap-1.5"
+              >
+                <span className="material-symbols-outlined text-[16px]">add</span>
+                <span>Sim, Consolidar como Complementar</span>
+              </button>
+              <button
+                onClick={handleCancelCaso4}
+                className="w-full bg-slate-100 hover:bg-slate-200 text-slate-800 font-bold py-3 text-xs rounded-xl transition-all flex items-center justify-center gap-1.5"
+              >
+                <span className="material-symbols-outlined text-[16px]">cancel</span>
+                <span>Não, Cancelar Análise</span>
               </button>
             </div>
           </div>

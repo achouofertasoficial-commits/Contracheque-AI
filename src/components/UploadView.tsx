@@ -217,7 +217,7 @@ export default function UploadView({ onAnalysisComplete, isLoading, setIsLoading
         <div className="space-y-1">
           <p className="text-xs font-bold text-emerald-950">Múltiplos Holerites</p>
           <p className="text-[11px] text-emerald-800 leading-relaxed font-semibold">
-            Você pode enviar mais de um holerite do mesmo mês. A IA irá consolidar automaticamente todas as informações.
+            Você pode enviar mais de um holerite, desde que sejam do mesmo mês, da mesma empresa e do mesmo pagamento. O app não permite misturar empresas ou meses diferentes.
           </p>
         </div>
       </div>
