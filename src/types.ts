@@ -58,6 +58,15 @@ export interface ContrachequeAnalise {
   itens: ItemContracheque[];
   alertas: Alerta[];
   resumo_ia: string;
+  metricas_calculadas?: {
+    ganho_por_dia?: number | null;
+    ganho_por_hora?: number | null;
+    desconto_por_dia?: number | null;
+    adicional_por_dia?: number | null;
+    adicional_noturno_por_hora?: number | null;
+    horas_extras_por_hora?: number | null;
+  };
+  observacoes_trabalhador?: string | null;
 }
 
 export type Screen =
@@ -66,6 +75,7 @@ export type Screen =
   | "dashboard"
   | "upload"
   | "analysis"
+  | "complement-analysis"
   | "month_details"
   | "calendar"
   | "history"
@@ -77,22 +87,13 @@ export interface User {
 }
 
 export interface ComplementaryAnalysisData {
-  trabalhador_nome?: string;
-  trabalhador_tipo?: "mensalista" | "intermitente" | null;
-  empresa_nome?: string;
-  empresa_cnpj?: string;
-  competencia_mes?: string;
-  competencia_ano?: string;
   dias_trabalhados?: number | null;
   horas_trabalhadas?: number | null;
   horas_extras?: number | null;
   horas_noturnas?: number | null;
-  salario_bruto?: number | null;
-  salario_liquido?: number | null;
-  total_descontos?: number | null;
-  total_adicionais?: number | null;
-  horas_extras_valor?: number | null;
-  adicional_noturno_valor?: number | null;
-  bonus?: number | null;
+  salario_liquido_recebido?: number | null;
+  empresa_nome?: string | null;
+  tipo_trabalhador?: "mensalista" | "intermitente" | null;
+  observacoes?: string | null;
 }
 
