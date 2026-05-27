@@ -1,0 +1,6 @@
+{
+  "name": "Contracheque AI",
+  "description": "Analisador inteligente de contracheques por foto ou PDF usando inteligência artificial.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
