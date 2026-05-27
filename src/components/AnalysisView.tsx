@@ -34,6 +34,22 @@ export default function AnalysisView({ currentAnalysis, onConfirm, onDiscard }: 
   const noturnasQtd = currentAnalysis.trabalho?.horas_noturnas || null;
   const noturnasValor = currentAnalysis.valores?.adicional_noturno_valor || null;
 
+  // Find DSR Proventos
+  const dsrItems = currentAnalysis.itens?.filter((item: any) => {
+    const name = (item.nome || "").toLowerCase();
+    return name.includes("dsr") || name.includes("descanso") || name.includes("r.s.d.") || name.includes("rsd");
+  }) || [];
+  const dsrValor = dsrItems.reduce((acc: number, item: any) => {
+    if (item.tipo === "provento") {
+      return acc + (item.valor || 0);
+    }
+    return acc;
+  }, 0);
+
+  const horasDsrIntermitente = currentAnalysis.trabalho?.horas_dsr_intermitente || null;
+  const dsrPorHora = currentAnalysis.metricas_calculadas?.dsr_por_hora ?? 
+    ((dsrValor && horasDsrIntermitente && horasDsrIntermitente > 0) ? dsrValor / horasDsrIntermitente : null);
+
   // Calculated metrics from complements or fallbacks
   const ganhoPorDia = currentAnalysis.metricas_calculadas?.ganho_por_dia ?? 
     ((salLiq && diasTrabalhados) ? salLiq / diasTrabalhados : null);
@@ -289,7 +305,33 @@ export default function AnalysisView({ currentAnalysis, onConfirm, onDiscard }: 
           </span>
         </div>
 
+        {/* DSR Intermitente por Hora Card */}
+        {horasDsrIntermitente !== null && dsrPorHora !== null && (
+          <div className="bg-indigo-50/40 rounded-2xl p-4 border border-indigo-100 flex flex-col justify-between h-28 shadow-xs col-span-2 md:col-span-1 animate-fadeIn">
+            <div className="flex flex-col gap-0.5">
+              <span className="text-[9px] font-bold text-indigo-700 uppercase tracking-wider">DSR Intermitente</span>
+              <span className="text-[10px] font-extrabold text-slate-700 tracking-tight leading-tight">Valor por Hora</span>
+            </div>
+            <span className="text-lg font-black text-indigo-900">
+              {formatBRL(dsrPorHora)}
+            </span>
+          </div>
+        )}
+
       </div>
+
+      {/* DSR Intermitente Callout Alert */}
+      {horasDsrIntermitente !== null && dsrPorHora !== null && (
+        <div className="bg-indigo-50 border border-indigo-100/70 rounded-2xl p-4 flex gap-3 text-left w-full animate-fadeIn shadow-2xs">
+          <span className="material-symbols-outlined text-indigo-700 select-none text-xl animate-pulse">beach_access</span>
+          <div>
+            <p className="text-xs font-bold text-indigo-950">Descanso Semanal Remunerado (DSR Intermitente)</p>
+            <p className="text-xs text-indigo-900 mt-1">
+              Você recebeu aproximadamente <strong className="text-indigo-950 font-extrabold">{formatBRL(dsrPorHora)}</strong> por hora de DSR intermitente.
+            </p>
+          </div>
+        </div>
+      )}
 
       {/* ADVANCED CHARTING SECTION */}
       <h2 className="text-sm font-extrabold text-slate-400 uppercase tracking-wider block">Mapeamento Visual do seu Bolso</h2>

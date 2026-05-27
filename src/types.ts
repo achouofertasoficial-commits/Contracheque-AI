@@ -32,6 +32,7 @@ export interface Trabalho {
   horas_noturnas: number | null;
   media_por_dia: number | null;
   media_por_hora: number | null;
+  horas_dsr_intermitente?: number | null;
 }
 
 export interface ItemContracheque {
@@ -65,6 +66,7 @@ export interface ContrachequeAnalise {
     adicional_por_dia?: number | null;
     adicional_noturno_por_hora?: number | null;
     horas_extras_por_hora?: number | null;
+    dsr_por_hora?: number | null;
   };
   observacoes_trabalhador?: string | null;
 }
@@ -95,5 +97,6 @@ export interface ComplementaryAnalysisData {
   empresa_nome?: string | null;
   tipo_trabalhador?: "mensalista" | "intermitente" | null;
   observacoes?: string | null;
+  horas_dsr_intermitente?: number | null;
 }
 

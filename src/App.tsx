@@ -60,11 +60,162 @@ export default function App() {
   };
 
   // Callback when AI finishes scanning
+  const [pendingResultsToConsolidate, setPendingResultsToConsolidate] = useState<any[] | null>(null);
+  const [showCompetencyConflictDialog, setShowCompetencyConflictDialog] = useState(false);
+
+  // Checks if results have different competencies
+  const checkCompetenciesConflict = (results: any[]) => {
+    if (results.length <= 1) return false;
+    const firstCompetence = `${results[0].competencia?.mes || ""}-${results[0].competencia?.ano || ""}`.toLowerCase();
+    for (const r of results) {
+      const comp = `${r.competencia?.mes || ""}-${r.competencia?.ano || ""}`.toLowerCase();
+      if (comp !== firstCompetence) {
+        return true;
+      }
+    }
+    return false;
+  };
+
+  const consolidateResults = (results: any[]) => {
+    if (results.length === 0) return null;
+    if (results.length === 1) return results[0];
+
+    const merged = JSON.parse(JSON.stringify(results[0]));
+    merged.id = `pc-consolidated-${Date.now()}`;
+
+    const valFields = [
+      'salario_bruto', 'salario_liquido', 'total_descontos', 
+      'total_adicionais', 'inss', 'fgts', 'horas_extras_valor', 
+      'adicional_noturno_valor', 'bonus'
+    ];
+    
+    const workFields = [
+      'dias_trabalhados', 'horas_trabalhadas', 'horas_extras', 
+      'horas_noturnas', 'horas_dsr_intermitente'
+    ];
+
+    valFields.forEach(f => { merged.valores[f] = 0; });
+    workFields.forEach(f => {
+      if (merged.trabalho[f] === undefined) {
+        merged.trabalho[f] = 0;
+      } else {
+        merged.trabalho[f] = merged.trabalho[f] || 0;
+      }
+    });
+
+    merged.itens = [];
+    merged.alertas = [];
+    const seenItemKeys = new Set<string>();
+
+    results.forEach((r, rIdx) => {
+      valFields.forEach(f => {
+        merged.valores[f] += Number(r.valores?.[f] || 0);
+      });
+
+      workFields.forEach(f => {
+        if (r.trabalho) {
+          merged.trabalho[f] += Number(r.trabalho[f] || 0);
+        }
+      });
+
+      if (r.itens && Array.isArray(r.itens)) {
+        r.itens.forEach((item: any) => {
+          const key = `${item.nome}-${item.tipo}-${item.valor}`.toLowerCase();
+          if (!seenItemKeys.has(key)) {
+            seenItemKeys.add(key);
+            merged.itens.push(item);
+          }
+        });
+      }
+
+      if (r.alertas && Array.isArray(r.alertas)) {
+        r.alertas.forEach((al: any) => {
+          if (!merged.alertas.some((existing: any) => existing.mensagem === al.mensagem)) {
+            merged.alertas.push(al);
+          }
+        });
+      }
+    });
+
+    workFields.forEach(f => {
+      if (merged.trabalho[f] === 0) {
+        merged.trabalho[f] = null;
+      }
+    });
+
+    merged.resumo_ia = `Esta é a análise consolidada de ${results.length} holerites enviados para a competência de ${merged.competencia.mes}/${merged.competencia.ano}.\n` +
+      `Soma totalizada: Salário Bruto de R$ ${merged.valores.salario_bruto.toFixed(2)} e Salário Líquido de R$ ${merged.valores.salario_liquido.toFixed(2)}.\n\n` +
+      results.map((r, i) => `Holerite ${i + 1} (${r.trabalhador?.nome || "Trabalhador"}): ${r.resumo_ia || ""}`).join("\n\n");
+
+    return merged;
+  };
+
+  const handleAnalyzeSeparately = () => {
+    if (pendingResultsToConsolidate && pendingResultsToConsolidate.length > 0) {
+      const toAdd = pendingResultsToConsolidate.map(r => {
+        return calculateEnhancedAnalysis(r, {
+          dias_trabalhados: r.trabalho?.dias_trabalhados ?? null,
+          horas_trabalhadas: r.trabalho?.horas_trabalhadas ?? null,
+          horas_extras: r.trabalho?.horas_extras ?? null,
+          horas_noturnas: r.trabalho?.horas_noturnas ?? null,
+          horas_dsr_intermitente: r.trabalho?.horas_dsr_intermitente ?? null,
+          salario_liquido_recebido: r.valores?.salario_liquido ?? null,
+          empresa_nome: r.empresa?.nome ?? null,
+          tipo_trabalhador: r.trabalhador?.tipo ?? null,
+          observacoes: null
+        });
+      });
+      
+      setAnalysedList(prev => [...toAdd, ...prev]);
+      setSelectedMonthId(toAdd[0].id);
+      
+      setShowCompetencyConflictDialog(false);
+      setPendingResultsToConsolidate(null);
+      setCurrentScreen('dashboard');
+    }
+  };
+
+  const handleConsolidateAll = () => {
+    if (pendingResultsToConsolidate && pendingResultsToConsolidate.length > 0) {
+      const merged = consolidateResults(pendingResultsToConsolidate);
+      setCurrentAnalysis(merged);
+      
+      setShowCompetencyConflictDialog(false);
+      setPendingResultsToConsolidate(null);
+      setCurrentScreen('complement-analysis');
+    }
+  };
+
   const handleAnalysisComplete = (extractedResult: any) => {
     setIsLoading(false);
     if (extractedResult) {
-      setCurrentAnalysis(extractedResult);
-      setCurrentScreen('complement-analysis');
+      if (extractedResult.multiple && Array.isArray(extractedResult.results)) {
+        const results = extractedResult.results;
+        if (results.length === 0) {
+          setCurrentScreen('upload');
+          return;
+        }
+
+        if (results.length === 1) {
+          setCurrentAnalysis(results[0]);
+          setCurrentScreen('complement-analysis');
+        } else {
+          // Check for conflicts
+          const hasConflict = checkCompetenciesConflict(results);
+          if (hasConflict) {
+            setPendingResultsToConsolidate(results);
+            setShowCompetencyConflictDialog(true);
+          } else {
+            // Unify same competency
+            const consolidated = consolidateResults(results);
+            setCurrentAnalysis(consolidated);
+            setCurrentScreen('complement-analysis');
+          }
+        }
+      } else {
+        setCurrentAnalysis(extractedResult);
+        setCurrentScreen('complement-analysis');
+      }
     } else {
       // Backed out / Cancelled
       setIsLoading(false);
@@ -93,6 +244,7 @@ export default function App() {
     merged.trabalho.horas_trabalhadas = complements.horas_trabalhadas;
     merged.trabalho.horas_extras = complements.horas_extras;
     merged.trabalho.horas_noturnas = complements.horas_noturnas;
+    merged.trabalho.horas_dsr_intermitente = complements.horas_dsr_intermitente;
     
     if (complements.salario_liquido_recebido !== undefined && complements.salario_liquido_recebido !== null) {
       merged.valores.salario_liquido = complements.salario_liquido_recebido;
@@ -111,12 +263,26 @@ export default function App() {
     const horasExtrasValor = merged.valores.horas_extras_valor;
     const horasExtrasQtd = merged.trabalho.horas_extras;
 
-    const ganho_por_dia = (salLiq && dias && dias > 0) ? Number((salLiq / dias).toFixed(2)) : null;
-    const ganho_por_hora = (salLiq && horas && horas > 0) ? Number((salLiq / horas).toFixed(2)) : null;
-    const desconto_por_dia = (totDescontos && dias && dias > 0) ? Number((totDescontos / dias).toFixed(2)) : null;
-    const adicional_por_dia = (totAdicionais && dias && dias > 0) ? Number((totAdicionais / dias).toFixed(2)) : null;
-    const adicional_noturno_por_hora = (adicionalNoturnoValor && horasNoturnas && horasNoturnas > 0) ? Number((adicionalNoturnoValor / horasNoturnas).toFixed(2)) : null;
-    const horas_extras_por_hora = (horasExtrasValor && horasExtrasQtd && horasExtrasQtd > 0) ? Number((horasExtrasValor / horasExtrasQtd).toFixed(2)) : null;
+    // Find DSR Proventos
+    const dsrItems = merged.itens?.filter((item: any) => {
+      const name = (item.nome || "").toLowerCase();
+      return name.includes("dsr") || name.includes("descanso") || name.includes("r.s.d.") || name.includes("rsd");
+    }) || [];
+    const valor_dsr = dsrItems.reduce((acc: number, item: any) => {
+      if (item.tipo === "provento") {
+        return acc + (item.valor || 0);
+      }
+      return acc;
+    }, 0);
+    const horasDsr = complements.horas_dsr_intermitente;
+    const dsr_por_hora = (valor_dsr && horasDsr && horasDsr > 0) ? (valor_dsr / horasDsr) : null;
+
+    const ganho_por_dia = (salLiq && dias && dias > 0) ? (salLiq / dias) : null;
+    const ganho_por_hora = (salLiq && horas && horas > 0) ? (salLiq / horas) : null;
+    const desconto_por_dia = (totDescontos && dias && dias > 0) ? (totDescontos / dias) : null;
+    const adicional_por_dia = (totAdicionais && dias && dias > 0) ? (totAdicionais / dias) : null;
+    const adicional_noturno_por_hora = (adicionalNoturnoValor && horasNoturnas && horasNoturnas > 0) ? (adicionalNoturnoValor / horasNoturnas) : null;
+    const horas_extras_por_hora = (horasExtrasValor && horasExtrasQtd && horasExtrasQtd > 0) ? (horasExtrasValor / horasExtrasQtd) : null;
 
     merged.metricas_calculadas = {
       ganho_por_dia,
@@ -124,10 +290,11 @@ export default function App() {
       desconto_por_dia,
       adicional_por_dia,
       adicional_noturno_por_hora,
-      horas_extras_por_hora
+      horas_extras_por_hora,
+      dsr_por_hora
     };
 
-    // Update the standard work averages
+    // Update the standard work averages (keep as unrounded value)
     merged.trabalho.media_por_dia = ganho_por_dia;
     merged.trabalho.media_por_hora = ganho_por_hora;
 
@@ -245,6 +412,49 @@ export default function App() {
           />
         )}
       </main>
+
+      {/* Competency Conflict Dialog Modal */}
+      {showCompetencyConflictDialog && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center z-50 p-4 animate-fadeIn">
+          <div className="bg-white rounded-3xl max-w-sm w-full p-6 shadow-2xl border border-slate-100 scale-95 animate-scaleUp text-center">
+            <div className="w-12 h-12 rounded-full bg-amber-50 flex items-center justify-center text-amber-600 mb-4 mx-auto animate-bounce">
+              <span className="material-symbols-outlined text-[24px]">warning</span>
+            </div>
+            <h3 className="text-base font-extrabold text-slate-900 mb-2">
+              Meses Diferentes Detectados
+            </h3>
+            <p className="text-xs text-slate-500 leading-relaxed mb-6">
+              Você enviou holerites de competências diferentes (meses distintos). Deseja analisar separadamente?
+            </p>
+            <div className="flex flex-col gap-2">
+              <button
+                onClick={handleAnalyzeSeparately}
+                className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-3 text-xs rounded-xl shadow-xs transition-colors flex items-center justify-center gap-1.5"
+              >
+                <span className="material-symbols-outlined text-[16px]">split_scene</span>
+                <span>Sim (Analisar Separadamente)</span>
+              </button>
+              <button
+                onClick={handleConsolidateAll}
+                className="w-full bg-slate-50 hover:bg-slate-100 text-slate-800 border border-slate-200 font-bold py-3 text-xs rounded-xl transition-all flex items-center justify-center gap-1.5"
+              >
+                <span className="material-symbols-outlined text-[16px]">layers</span>
+                <span>Não (Consolidar em um Único Mês)</span>
+              </button>
+              <button
+                onClick={() => {
+                  setShowCompetencyConflictDialog(false);
+                  setPendingResultsToConsolidate(null);
+                  setCurrentScreen('upload');
+                }}
+                className="w-full bg-transparent hover:bg-rose-50 text-rose-600 font-bold py-2 text-[10px] rounded-xl transition-colors mt-2"
+              >
+                Cancelar e Voltar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

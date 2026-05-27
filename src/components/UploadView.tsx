@@ -7,7 +7,14 @@ interface UploadViewProps {
 }
 
 export default function UploadView({ onAnalysisComplete, isLoading, setIsLoading }: UploadViewProps) {
-  const [selectedFiles, setSelectedFiles] = useState<{ name: string; size: string; simulated: boolean; mockType?: string }[]>([]);
+  const [selectedFiles, setSelectedFiles] = useState<{ 
+    name: string; 
+    size: string; 
+    simulated: boolean; 
+    mockType?: string;
+    fileData?: string;
+    mimeType?: string;
+  }[]>([]);
   const [loadingStatus, setLoadingStatus] = useState("Lendo layout do documento...");
   const [dragActive, setDragActive] = useState(false);
 
@@ -22,36 +29,32 @@ export default function UploadView({ onAnalysisComplete, isLoading, setIsLoading
         name: filename,
         size: mockType === 'joao' ? '2.4 MB' : '1.8 MB',
         simulated: true,
-        mockType: mockType
+        mockType: mockType,
+        fileData: "simulated-test-data",
+        mimeType: "application/pdf"
       }
     ]);
   };
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files.length > 0) {
-      const file = e.target.files[0];
-      const reader = new FileReader();
-
-      reader.onload = async () => {
-        const base64Data = reader.result as string;
-        setSelectedFiles(prev => [
-          ...prev,
-          {
-            name: file.name,
-            size: (file.size / (1024 * 1024)).toFixed(1) + " MB",
-            simulated: false
-          }
-        ]);
-        
-        // Save the raw file base64 data to global temp storage to parse when user clicks analyze
-        (window as any).__tempUploadedFile = {
-          fileData: base64Data,
-          fileName: file.name,
-          mimeType: file.type
+      (Array.from(e.target.files) as File[]).forEach(file => {
+        const reader = new FileReader();
+        reader.onload = async () => {
+          const base64Data = reader.result as string;
+          setSelectedFiles(prev => [
+            ...prev,
+            {
+              name: file.name,
+              size: (file.size / (1024 * 1024)).toFixed(1) + " MB",
+              simulated: false,
+              fileData: base64Data,
+              mimeType: file.type
+            }
+          ]);
         };
-      };
-
-      reader.readAsDataURL(file);
+        reader.readAsDataURL(file);
+      });
     }
   };
 
@@ -70,37 +73,29 @@ export default function UploadView({ onAnalysisComplete, isLoading, setIsLoading
     e.stopPropagation();
     setDragActive(false);
 
-    if (e.dataTransfer.files && e.dataTransfer.files[0]) {
-      const file = e.dataTransfer.files[0];
-      const reader = new FileReader();
-
-      reader.onload = async () => {
-        const base64Data = reader.result as string;
-        setSelectedFiles(prev => [
-          ...prev,
-          {
-            name: file.name,
-            size: (file.size / (1024 * 1024)).toFixed(1) + " MB",
-            simulated: false
-          }
-        ]);
-        
-        (window as any).__tempUploadedFile = {
-          fileData: base64Data,
-          fileName: file.name,
-          mimeType: file.type
+    if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+      (Array.from(e.dataTransfer.files) as File[]).forEach(file => {
+        const reader = new FileReader();
+        reader.onload = async () => {
+          const base64Data = reader.result as string;
+          setSelectedFiles(prev => [
+            ...prev,
+            {
+              name: file.name,
+              size: (file.size / (1024 * 1024)).toFixed(1) + " MB",
+              simulated: false,
+              fileData: base64Data,
+              mimeType: file.type
+            }
+          ]);
         };
-      };
-
-      reader.readAsDataURL(file);
+        reader.readAsDataURL(file);
+      });
     }
   };
 
   const resetUpload = (index: number) => {
     setSelectedFiles(prev => prev.filter((_, i) => i !== index));
-    if (selectedFiles.length <= 1) {
-      delete (window as any).__tempUploadedFile;
-    }
   };
 
   const triggerUploadInput = () => {
@@ -135,36 +130,10 @@ export default function UploadView({ onAnalysisComplete, isLoading, setIsLoading
     }, 700);
 
     try {
-      // Check if we uploaded a real file or if we're using simulated
-      const latestFile = selectedFiles[selectedFiles.length - 1];
-      
-      let payloadBody: any = {};
-      
-      if (latestFile.simulated) {
-        // If simulated, send mock filename to trigger dedicated parser mock
-        payloadBody = {
-          fileData: "simulated-test-data",
-          fileName: latestFile.name,
-          mimeType: "application/pdf"
-        };
-      } else {
-        const tempFile = (window as any).__tempUploadedFile;
-        if (tempFile) {
-          payloadBody = tempFile;
-        } else {
-          // fallback if missing
-          payloadBody = {
-            fileData: "simulated-test-data",
-            fileName: latestFile.name,
-            mimeType: "application/pdf"
-          };
-        }
-      }
-
       const response = await fetch('/api/analisar-contracheque', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payloadBody)
+        body: JSON.stringify({ files: selectedFiles })
       });
 
       const extractedJson = await response.json();
@@ -235,11 +204,22 @@ export default function UploadView({ onAnalysisComplete, isLoading, setIsLoading
       </div>
 
       {/* Warning Tip */}
-      <div className="w-full bg-blue-50 border border-blue-100 rounded-xl p-4 flex gap-3 text-left mb-6 shadow-xs">
+      <div className="w-full bg-blue-50 border border-blue-100 rounded-xl p-4 flex gap-3 text-left mb-4 shadow-xs">
         <span className="material-symbols-outlined text-indigo-700 select-none">info</span>
         <p className="text-xs text-indigo-900 leading-relaxed">
           Envie fotos nítidas do seu holerite sem cortes, borrões ou sombras. Aceitamos arquivos em formatos JPG, PNG ou holerites oficiais em PDF. Os dados permanecem protegidos por criptografia de ponta.
         </p>
+      </div>
+
+      {/* Competence Consolidation Info */}
+      <div className="w-full bg-emerald-50 border border-emerald-100/50 rounded-xl p-4 flex gap-3 text-left mb-6 shadow-2xs">
+        <span className="material-symbols-outlined text-emerald-700 select-none">layers</span>
+        <div className="space-y-1">
+          <p className="text-xs font-bold text-emerald-950">Múltiplos Holerites</p>
+          <p className="text-[11px] text-emerald-800 leading-relaxed font-semibold">
+            Você pode enviar mais de um holerite do mesmo mês. A IA irá consolidar automaticamente todas as informações.
+          </p>
+        </div>
       </div>
 
       {/* Hidden File Input */}

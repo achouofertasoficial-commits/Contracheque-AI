@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { ComplementaryAnalysisData } from '../types';
+import DecimalHoursHint from './DecimalHoursHint';
 
 interface ComplementAnalysisViewProps {
   currentAnalysis: any;
@@ -20,6 +21,7 @@ export default function ComplementAnalysisView({ currentAnalysis, onConfirm, onD
     empresa_nome: currentAnalysis.empresa?.nome ?? '',
     tipo_trabalhador: currentAnalysis.trabalhador?.tipo ?? 'mensalista',
     observacoes: '',
+    horas_dsr_intermitente: currentAnalysis.trabalho?.horas_dsr_intermitente ?? null,
   });
 
   // Local state as string for uncontrolled user typing before parses
@@ -43,6 +45,10 @@ export default function ComplementAnalysisView({ currentAnalysis, onConfirm, onD
 
   const [noturnasText, setNoturnasText] = useState(() => {
     return currentAnalysis.trabalho?.horas_noturnas?.toString() || '';
+  });
+
+  const [dsrText, setDsrText] = useState(() => {
+    return currentAnalysis.trabalho?.horas_dsr_intermitente?.toString() || '';
   });
 
   const [empresaText, setEmpresaText] = useState(() => {
@@ -74,9 +80,10 @@ export default function ComplementAnalysisView({ currentAnalysis, onConfirm, onD
   const handleRecalculate = () => {
     const parsedSalLiq = parseBrazilianCurrency(salLiqText);
     const parsedDias = diasText ? parseInt(diasText, 10) : null;
-    const parsedHoras = horasText ? parseInt(horasText, 10) : null;
-    const parsedExtras = extrasText ? parseFloat(extrasText) : null;
-    const parsedNoturnas = noturnasText ? parseFloat(noturnasText) : null;
+    const parsedHoras = horasText ? parseFloat(horasText.replace(',', '.')) : null;
+    const parsedExtras = extrasText ? parseFloat(extrasText.replace(',', '.')) : null;
+    const parsedNoturnas = noturnasText ? parseFloat(noturnasText.replace(',', '.')) : null;
+    const parsedDsr = dsrText ? parseFloat(dsrText.replace(',', '.')) : null;
 
     const data: ComplementaryAnalysisData = {
       dias_trabalhados: isNaN(Number(parsedDias)) ? null : parsedDias,
@@ -86,11 +93,19 @@ export default function ComplementAnalysisView({ currentAnalysis, onConfirm, onD
       salario_liquido_recebido: parsedSalLiq,
       empresa_nome: empresaText.trim() || null,
       tipo_trabalhador: tipoTrab || null,
-      observacoes: obsText.trim() || null
+      observacoes: obsText.trim() || null,
+      horas_dsr_intermitente: isNaN(Number(parsedDsr)) ? null : parsedDsr
     };
 
     onConfirm(data);
   };
+
+  const hasDsrItem = currentAnalysis.itens?.some((item: any) => {
+    const name = (item.nome || "").toLowerCase();
+    return name.includes("dsr") || name.includes("descanso") || name.includes("r.s.d.") || name.includes("rsd");
+  }) || false;
+
+  const showDsrField = tipoTrab === 'intermitente' || hasDsrItem;
 
   return (
     <div className="max-w-2xl mx-auto py-8 px-4 flex flex-col gap-6 animate-fadeIn pb-16">
@@ -173,16 +188,15 @@ export default function ComplementAnalysisView({ currentAnalysis, onConfirm, onD
               </label>
               <input
                 type="text"
-                inputMode="numeric"
-                pattern="[0-9]*"
                 placeholder="Ex: 176"
                 value={horasText}
-                onChange={(e) => setHorasText(e.target.value.replace(/\D/g, ''))}
+                onChange={(e) => setHorasText(e.target.value)}
                 className="bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2.5 text-xs font-semibold text-slate-800 focus:outline-none focus:border-emerald-600 focus:ring-1 focus:ring-emerald-600 transition-all"
               />
               <span className="text-[9px] text-slate-400">
                 Carga horária total (ex: 176 horas ou 220 horas).
               </span>
+              <DecimalHoursHint />
             </div>
 
             {/* Extra Hours Quantity */}
@@ -201,6 +215,7 @@ export default function ComplementAnalysisView({ currentAnalysis, onConfirm, onD
               <span className="text-[9px] text-slate-400">
                 Soma da quantidade de horas extras trabalhadas no mês.
               </span>
+              <DecimalHoursHint />
             </div>
 
             {/* Night shift hours Quantity */}
@@ -219,7 +234,29 @@ export default function ComplementAnalysisView({ currentAnalysis, onConfirm, onD
               <span className="text-[9px] text-slate-400">
                 Muitos holerites mostram apenas o valor, declare as horas se souber!
               </span>
+              <DecimalHoursHint />
             </div>
+
+            {/* DSR Intermitente Hours */}
+            {showDsrField && (
+              <div className="flex flex-col gap-1.5">
+                <label className="text-[11px] font-bold text-slate-700 flex items-center gap-1">
+                  <span className="material-symbols-outlined text-[16px] text-indigo-500">beach_access</span>
+                  Horas de DSR Intermitente
+                </label>
+                <input
+                  type="text"
+                  placeholder="Ex: 12,50"
+                  value={dsrText}
+                  onChange={(e) => setDsrText(e.target.value)}
+                  className="bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2.5 text-xs font-semibold text-slate-800 focus:outline-none focus:border-emerald-600 focus:ring-1 focus:ring-emerald-600 transition-all"
+                />
+                <span className="text-[9px] text-slate-400">
+                  Horas referentes ao Descanso Semanal Remunerado.
+                </span>
+                <DecimalHoursHint />
+              </div>
+            )}
 
             {/* Company name */}
             <div className="flex flex-col gap-1.5">

@@ -139,45 +139,109 @@ function getMockPayload(fileName: string, mimeType?: string): any {
 
 // REST route for Analysis
 app.post('/api/analisar-contracheque', async (req, res) => {
-  const { fileData, fileName, mimeType } = req.body;
+  const { fileData, fileName, mimeType, files } = req.body;
+  const incomingFiles = files || [];
 
-  if (!fileData) {
+  if (incomingFiles.length === 0 && fileData) {
+    incomingFiles.push({
+      fileData,
+      name: fileName,
+      mimeType,
+      simulated: fileData === "simulated-test-data"
+    });
+  }
+
+  if (incomingFiles.length === 0) {
     return res.status(400).json({ error: 'Nenhum arquivo enviado.' });
   }
 
   const apiKey = process.env.GEMINI_API_KEY;
+  console.log(`[Contracheque AI Server] Recebida requisição de análise para ${incomingFiles.length} arquivos.`);
 
-  // Let's print out what is happening
-  console.log(`[Contracheque AI Server] Recebida requisição de análise. Arquivo: ${fileName}`);
+  const analyzedResults = [];
 
-  if (!apiKey || apiKey === "MY_GEMINI_API_KEY") {
-    console.log(`[Contracheque AI Server] Chave GEMINI_API_KEY não localizada ou padrão. Usando motor simulado inteligente.`);
-    // Simulate real AI latency
-    await new Promise(resolve => setTimeout(resolve, 3500));
-    return res.json(getMockPayload(fileName, mimeType));
-  }
-
-  try {
-    console.log(`[Contracheque AI Server] Inicializando chamada à API Gemini com modelo gemini-3.5-flash...`);
-    
-    // Clear prefixes of base64 if present
-    let rawBase64 = fileData;
-    if (fileData.includes('base64,')) {
-      rawBase64 = fileData.split('base64,')[1];
-    }
-
-    const ai = new GoogleGenAI({
-      apiKey: apiKey,
-      httpOptions: {
-        headers: {
-          'User-Agent': 'aistudio-build',
+  const aiSchema = {
+    type: Type.OBJECT,
+    properties: {
+      trabalhador: {
+        type: Type.OBJECT,
+        properties: {
+          nome: { type: Type.STRING, description: "Nome do trabalhador" },
+          tipo: { type: Type.STRING, description: "mensalista ou intermitente" }
         }
+      },
+      empresa: {
+        type: Type.OBJECT,
+        properties: {
+          nome: { type: Type.STRING },
+          cnpj: { type: Type.STRING }
+        }
+      },
+      competencia: {
+        type: Type.OBJECT,
+        properties: {
+          mes: { type: Type.STRING, description: "Mês por extenso, ej: Outubro" },
+          ano: { type: Type.STRING }
+        }
+      },
+      valores: {
+        type: Type.OBJECT,
+        properties: {
+          salario_bruto: { type: Type.NUMBER },
+          salario_liquido: { type: Type.NUMBER },
+          total_descontos: { type: Type.NUMBER },
+          total_adicionais: { type: Type.NUMBER },
+          inss: { type: Type.NUMBER },
+          fgts: { type: Type.NUMBER },
+          horas_extras_valor: { type: Type.NUMBER },
+          adicional_noturno_valor: { type: Type.NUMBER },
+          bonus: { type: Type.NUMBER }
+        }
+      },
+      trabalho: {
+        type: Type.OBJECT,
+        properties: {
+          dias_trabalhados: { type: Type.NUMBER },
+          horas_trabalhadas: { type: Type.NUMBER },
+          horas_extras: { type: Type.NUMBER },
+          horas_noturnas: { type: Type.NUMBER },
+          media_por_dia: { type: Type.NUMBER },
+          media_por_hora: { type: Type.NUMBER }
+        }
+      },
+      itens: {
+        type: Type.ARRAY,
+        items: {
+          type: Type.OBJECT,
+          properties: {
+            nome: { type: Type.STRING },
+            tipo: { type: Type.STRING, description: "provento ou desconto" },
+            valor: { type: Type.NUMBER },
+            referencia: { type: Type.STRING }
+          }
+        }
+      },
+      alertas: {
+        type: Type.ARRAY,
+        items: {
+          type: Type.OBJECT,
+          properties: {
+            tipo: { type: Type.STRING, description: "atenção, info, perigo" },
+            mensagem: { type: Type.STRING }
+          }
+        }
+      },
+      resumo_ia: { type: Type.STRING },
+      campos_ausentes: {
+        type: Type.ARRAY,
+        items: { type: Type.STRING },
+        description: "Lista de campos ausentes identificados (ex: 'trabalhador.nome', 'trabalho.dias_trabalhados', etc.)"
       }
-    });
+    },
+    required: ["trabalhador", "empresa", "competencia", "valores", "trabalho", "itens", "alertas", "resumo_ia"]
+  };
 
-    const parsedMime = mimeType || "image/png";
-
-    const prompt = `Analise este arquivo de contracheque (pode ser imagem ou PDF) e extraia todas as informações financeiras.
+  const modelPrompt = `Analise este arquivo de contracheque (pode ser imagem ou PDF) e extraia todas as informações financeiras.
 Retorne um objeto JSON estritamente compatível com o seguinte de acordo com o padrão CLT brasileiro:
 - trabalhador (nome, tipo ('mensalista' ou 'intermitente'))
 - empresa (nome, cnpj)
@@ -191,118 +255,79 @@ Retorne um objeto JSON estritamente compatível com o seguinte de acordo com o p
 
 Importante: Não invente dados. Se não encontrar dias trabalhados, horas trabalhadas, empresa, salário líquido ou qualquer outro campo, retorne null. Não use valores padrão como 22 dias ou 176 horas. Os valores devem ser numéricos.`;
 
-    const response = await ai.models.generateContent({
-      model: "gemini-3.5-flash",
-      contents: [
-        {
-          inlineData: {
-            mimeType: parsedMime,
-            data: rawBase64
-          }
-        },
-        prompt
-      ],
-      config: {
-        responseMimeType: "application/json",
-        responseSchema: {
-          type: Type.OBJECT,
-          properties: {
-            trabalhador: {
-              type: Type.OBJECT,
-              properties: {
-                nome: { type: Type.STRING, description: "Nome do trabalhador" },
-                tipo: { type: Type.STRING, description: "mensalista ou intermitente" }
-              }
-            },
-            empresa: {
-              type: Type.OBJECT,
-              properties: {
-                nome: { type: Type.STRING },
-                cnpj: { type: Type.STRING }
-              }
-            },
-            competencia: {
-              type: Type.OBJECT,
-              properties: {
-                mes: { type: Type.STRING, description: "Mês por extenso, ej: Outubro" },
-                ano: { type: Type.STRING }
-              }
-            },
-            valores: {
-              type: Type.OBJECT,
-              properties: {
-                salario_bruto: { type: Type.NUMBER },
-                salario_liquido: { type: Type.NUMBER },
-                total_descontos: { type: Type.NUMBER },
-                total_adicionais: { type: Type.NUMBER },
-                inss: { type: Type.NUMBER },
-                fgts: { type: Type.NUMBER },
-                horas_extras_valor: { type: Type.NUMBER },
-                adicional_noturno_valor: { type: Type.NUMBER },
-                bonus: { type: Type.NUMBER }
-              }
-            },
-            trabalho: {
-              type: Type.OBJECT,
-              properties: {
-                dias_trabalhados: { type: Type.NUMBER },
-                horas_trabalhadas: { type: Type.NUMBER },
-                horas_extras: { type: Type.NUMBER },
-                horas_noturnas: { type: Type.NUMBER },
-                media_por_dia: { type: Type.NUMBER },
-                media_por_hora: { type: Type.NUMBER }
-              }
-            },
-            itens: {
-              type: Type.ARRAY,
-              items: {
-                type: Type.OBJECT,
-                properties: {
-                  nome: { type: Type.STRING },
-                  tipo: { type: Type.STRING, description: "provento ou desconto" },
-                  valor: { type: Type.NUMBER },
-                  referencia: { type: Type.STRING }
-                }
-              }
-            },
-            alertas: {
-              type: Type.ARRAY,
-              items: {
-                type: Type.OBJECT,
-                properties: {
-                  tipo: { type: Type.STRING, description: "atenção, info, perigo" },
-                  mensagem: { type: Type.STRING }
-                }
-              }
-            },
-            resumo_ia: { type: Type.STRING },
-            campos_ausentes: {
-              type: Type.ARRAY,
-              items: { type: Type.STRING },
-              description: "Lista de campos ausentes identificados (ex: 'trabalhador.nome', 'trabalho.dias_trabalhados', etc.)"
-            }
-          },
-          required: ["trabalhador", "empresa", "competencia", "valores", "trabalho", "itens", "alertas", "resumo_ia"]
+  for (const file of incomingFiles) {
+    if (!file.fileData) continue;
+
+    if (file.simulated) {
+      console.log(`[Contracheque AI Server] Processando arquivo simulado: ${file.name}`);
+      analyzedResults.push(getMockPayload(file.name, file.mimeType));
+    } else if (!apiKey || apiKey === "MY_GEMINI_API_KEY") {
+      console.log(`[Contracheque AI Server] Sem chave API. Simulando processo para arquivo real: ${file.name}`);
+      analyzedResults.push(getMockPayload(file.name, file.mimeType));
+    } else {
+      try {
+        console.log(`[Contracheque AI Server] Enviando ${file.name} ao Gemini API...`);
+        let rawBase64 = file.fileData;
+        if (file.fileData.includes('base64,')) {
+          rawBase64 = file.fileData.split('base64,')[1];
         }
+
+        const ai = new GoogleGenAI({
+          apiKey: apiKey,
+          httpOptions: {
+            headers: {
+              'User-Agent': 'aistudio-build',
+            }
+          }
+        });
+
+        const parsedMime = file.mimeType || "image/png";
+
+        const response = await ai.models.generateContent({
+          model: "gemini-3.5-flash",
+          contents: [
+            {
+              inlineData: {
+                mimeType: parsedMime,
+                data: rawBase64
+              }
+            },
+            modelPrompt
+          ],
+          config: {
+            responseMimeType: "application/json",
+            responseSchema: aiSchema
+          }
+        });
+
+        const parsedStr = response.text?.trim() || "";
+        const resultObj = JSON.parse(parsedStr);
+        resultObj.id = `pc-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
+        analyzedResults.push(resultObj);
+      } catch (err: any) {
+        console.error(`[Contracheque AI Server] Erro ao analisar ${file.name} via Gemini API:`, err);
+        const fallback = getMockPayload(file.name, file.mimeType);
+        fallback.alertas.unshift({
+          tipo: "atenção",
+          mensagem: `Aviso: Análise simulada gerada como fallback devido ao erro: ${err.message}`
+        });
+        fallback.id = `pc-fallback-${Date.now()}`;
+        analyzedResults.push(fallback);
       }
-    });
-
-    const parsedJsonStr = response.text?.trim() || "";
-    console.log(`[Contracheque AI Server] Resposta da API recebida: ${parsedJsonStr.substring(0, 300)}...`);
-    
-    const structuredResult = JSON.parse(parsedJsonStr);
-    return res.json(structuredResult);
-
-  } catch (error: any) {
-    console.error('[Contracheque AI Server] Falha ao chamar a API real do Gemini:', error);
-    // Silent fallback to mock on real error so user application doesn't crash but warns nicely
-    const fallbackMock = getMockPayload(fileName, mimeType);
-    fallbackMock.alertas.unshift({
-      tipo: "atenção",
-      mensagem: `Aviso: Análise simulada gerada como fallback devido a um erro na chamada da API: ${error.message}`
-    });
-    return res.json(fallbackMock);
+    }
   }
+
+  // Ensure every payload has a valid ID
+  analyzedResults.forEach((resItem, index) => {
+    if (!resItem.id) {
+      resItem.id = `pc-${Date.now()}-${index}`;
+    }
+  });
+
+  return res.json({
+    multiple: true,
+    results: analyzedResults
+  });
 });
 
 // Vite Middleware integration
