@@ -66,7 +66,8 @@ export default function App() {
       setCurrentScreen('analysis');
     } else {
       // Backed out / Cancelled
-      setCurrentScreen('dashboard');
+      setIsLoading(false);
+      setCurrentScreen('upload');
     }
   };
 
@@ -82,7 +83,8 @@ export default function App() {
 
   const handleDiscardAnalysis = () => {
     setCurrentAnalysis(null);
-    setCurrentScreen('dashboard');
+    setIsLoading(false);
+    setCurrentScreen('upload');
   };
 
   return (

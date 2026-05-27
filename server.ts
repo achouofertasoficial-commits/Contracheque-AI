@@ -77,7 +77,8 @@ function getMockPayload(fileName: string, mimeType?: string): any {
           mensagem: "Desconto de Seguro de Saúde estável. Desconto por imposto de renda retido na fonte proporcional ao bônus."
         }
       ],
-      resumo_ia: "A análise de Janeiro de 2024 aponta uma excelente evolução de rendimentos para Ana Silva. Com um salário base bruto de R$ 3.200,00 acrescido de horas extras e um bônus de metas de R$ 500,00, o salário líquido atingiu R$ 3.390,00. As retenções do INSS e IRPF estão em conformidade legal."
+      resumo_ia: "A análise de Janeiro de 2024 aponta uma excelente evolução de rendimentos para Ana Silva. Com um salário base bruto de R$ 3.200,00 acrescido de horas extras e um bônus de metas de R$ 500,00, o salário líquido atingiu R$ 3.390,00. As retenções do INSS e IRPF estão em conformidade legal.",
+      campos_ausentes: []
     };
   }
 
@@ -131,7 +132,8 @@ function getMockPayload(fileName: string, mimeType?: string): any {
         mensagem: "Dedução Vale Transporte: O desconto de 6% sobre o salário base foi aplicado corretamente, mas note que houve dias de falta injustificada que podem ter impactado o cálculo proporcional."
       }
     ],
-    resumo_ia: "O salário bruto do João Silva referente à competência Outubro/2023 foi de R$ 4.500,00. Foram identificados adicionais de R$ 150,00 (10 horas extras). Houve descontos totalizando R$ 679,50, resultando em um excelente salário líquido de R$ 3.820,50."
+    resumo_ia: "O salário bruto do João Silva referente à competência Outubro/2023 foi de R$ 4.500,00. Foram identificados adicionais de R$ 150,00 (10 horas extras). Houve descontos totalizando R$ 679,50, resultando em um excelente salário líquido de R$ 3.820,50.",
+    campos_ausentes: []
   };
 }
 
@@ -181,12 +183,13 @@ Retorne um objeto JSON estritamente compatível com o seguinte de acordo com o p
 - empresa (nome, cnpj)
 - competencia (mes - em extenso em português ex: 'Outubro', ano)
 - valores (salario_bruto, salario_liquido, total_descontos, total_adicionais (soma dos proventos além do salário bruto comum), inss, fgts, horas_extras_valor, adicional_noturno_valor, bonus)
-- trabalho (dias_trabalhados, horas_trabalhadas, horas_extras, horas_noturnas, media_por_dia (liquido dividido por dias_trabalhados, padrão 22), media_por_hora (liquido dividido por horas_trabalhadas, padrão 176))
+- trabalho (dias_trabalhados, horas_trabalhadas, horas_extras, horas_noturnas, media_por_dia (liquido dividido por dias_trabalhados), media_por_hora (liquido dividido por horas_trabalhadas))
 - itens (lista de cada linha no contracheque: { nome, tipo ('provento' ou 'desconto'), valor, referencia })
 - alertas (lista de objetos { tipo ('atenção', 'info', 'perigo'), mensagem } alertando sobre descontos acentuados, imposto proporcional alto, ou comparado a médias)
 - resumo_ia (uma explicação global e simples de entender para o trabalhador entender suas contas)
+- campos_ausentes (uma lista de strings indicando os campos específicos que não foram encontrados ou estão ausentes/nulos, ex: ["empresa.nome", "trabalho.dias_trabalhados", "valores.salario_liquido"])
 
-Importante: Se algum dado não estiver visível de jeito nenhum, retorne null. Os valores devem ser numéricos.`;
+Importante: Não invente dados. Se não encontrar dias trabalhados, horas trabalhadas, empresa, salário líquido ou qualquer outro campo, retorne null. Não use valores padrão como 22 dias ou 176 horas. Os valores devem ser numéricos.`;
 
     const response = await ai.models.generateContent({
       model: "gemini-3.5-flash",
@@ -209,8 +212,7 @@ Importante: Se algum dado não estiver visível de jeito nenhum, retorne null. O
               properties: {
                 nome: { type: Type.STRING, description: "Nome do trabalhador" },
                 tipo: { type: Type.STRING, description: "mensalista ou intermitente" }
-              },
-              required: ["nome", "tipo"]
+              }
             },
             empresa: {
               type: Type.OBJECT,
@@ -238,8 +240,7 @@ Importante: Se algum dado não estiver visível de jeito nenhum, retorne null. O
                 horas_extras_valor: { type: Type.NUMBER },
                 adicional_noturno_valor: { type: Type.NUMBER },
                 bonus: { type: Type.NUMBER }
-              },
-              required: ["salario_bruto", "salario_liquido", "total_descontos", "total_adicionais"]
+              }
             },
             trabalho: {
               type: Type.OBJECT,
@@ -274,7 +275,12 @@ Importante: Se algum dado não estiver visível de jeito nenhum, retorne null. O
                 }
               }
             },
-            resumo_ia: { type: Type.STRING }
+            resumo_ia: { type: Type.STRING },
+            campos_ausentes: {
+              type: Type.ARRAY,
+              items: { type: Type.STRING },
+              description: "Lista de campos ausentes identificados (ex: 'trabalhador.nome', 'trabalho.dias_trabalhados', etc.)"
+            }
           },
           required: ["trabalhador", "empresa", "competencia", "valores", "trabalho", "itens", "alertas", "resumo_ia"]
         }

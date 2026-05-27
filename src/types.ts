@@ -75,3 +75,24 @@ export interface User {
   nome: string;
   email: string;
 }
+
+export interface ComplementaryAnalysisData {
+  trabalhador_nome?: string;
+  trabalhador_tipo?: "mensalista" | "intermitente" | null;
+  empresa_nome?: string;
+  empresa_cnpj?: string;
+  competencia_mes?: string;
+  competencia_ano?: string;
+  dias_trabalhados?: number | null;
+  horas_trabalhadas?: number | null;
+  horas_extras?: number | null;
+  horas_noturnas?: number | null;
+  salario_bruto?: number | null;
+  salario_liquido?: number | null;
+  total_descontos?: number | null;
+  total_adicionais?: number | null;
+  horas_extras_valor?: number | null;
+  adicional_noturno_valor?: number | null;
+  bonus?: number | null;
+}
+
