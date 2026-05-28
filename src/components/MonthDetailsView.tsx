@@ -21,9 +21,9 @@ export default function MonthDetailsView({ analysedList, selectedMonthId, setSel
   }
 
   // Format currency
-  const formatCurrency = (val: number | null) => {
-    if (val === null || val === undefined) return "R$ 0,00";
-    return val.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+  const formatCurrency = (val: any) => {
+    if (val === null || val === undefined || isNaN(Number(val))) return "R$ 0,00";
+    return Number(val).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
   };
 
   // Classify proventos and descontos arrays
@@ -62,7 +62,9 @@ export default function MonthDetailsView({ analysedList, selectedMonthId, setSel
         <div className="bg-white rounded-2xl p-5 border border-slate-100 shadow-xs flex items-center justify-between">
           <div>
             <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block mb-1">Dias Trabalhados</span>
-            <span className="text-xl font-bold text-slate-950">{activeMonth.trabalho.dias_trabalhados || 22} dias</span>
+            <span className="text-xl font-bold text-slate-950">
+              {activeMonth.trabalho.dias_trabalhados !== null && activeMonth.trabalho.dias_trabalhados !== undefined ? `${activeMonth.trabalho.dias_trabalhados} dias` : "Não informado"}
+            </span>
           </div>
           <div className="w-10 h-10 rounded-full bg-slate-50 flex items-center justify-center border border-slate-100/50">
             <span className="material-symbols-outlined text-slate-500">calendar_today</span>
@@ -73,7 +75,9 @@ export default function MonthDetailsView({ analysedList, selectedMonthId, setSel
         <div className="bg-white rounded-2xl p-5 border border-slate-100 shadow-xs flex items-center justify-between">
           <div>
             <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block mb-1">Horas Trabalhadas</span>
-            <span className="text-xl font-bold text-slate-950">{activeMonth.trabalho.horas_trabalhadas || 176} horas</span>
+            <span className="text-xl font-bold text-slate-950">
+              {activeMonth.trabalho.horas_trabalhadas !== null && activeMonth.trabalho.horas_trabalhadas !== undefined ? `${activeMonth.trabalho.horas_trabalhadas} horas` : "Não informado"}
+            </span>
           </div>
           <div className="w-10 h-10 rounded-full bg-slate-50 flex items-center justify-center border border-slate-100/50">
             <span className="material-symbols-outlined text-slate-500">schedule</span>

@@ -21,9 +21,9 @@ export default function DashboardView({ analysedList, user, onNavigate, setSelec
   }
 
   // Format money function
-  const formatCurrency = (val: number | null) => {
-    if (val === null) return "R$ 0,00";
-    return val.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+  const formatCurrency = (val: any) => {
+    if (val === null || val === undefined || isNaN(Number(val))) return "R$ 0,00";
+    return Number(val).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
   };
 
   // Find percentage proportion of Proventos (salario_liquido / salario_bruto)
@@ -137,7 +137,9 @@ export default function DashboardView({ analysedList, user, onNavigate, setSelec
           </div>
           <div>
             <p className="text-[10px] text-slate-400 font-semibold">Dias Trabalhados</p>
-            <p className="text-sm font-bold text-slate-800">{latestItem.trabalho.dias_trabalhados || 22} dias</p>
+            <p className="text-sm font-bold text-slate-800">
+              {latestItem.trabalho.dias_trabalhados !== null && latestItem.trabalho.dias_trabalhados !== undefined ? `${latestItem.trabalho.dias_trabalhados} dias` : "Não informado"}
+            </p>
           </div>
         </div>
 

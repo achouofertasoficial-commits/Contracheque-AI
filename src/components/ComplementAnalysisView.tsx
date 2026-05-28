@@ -27,8 +27,8 @@ export default function ComplementAnalysisView({ currentAnalysis, onConfirm, onD
   // Local state as string for uncontrolled user typing before parses
   const [salLiqText, setSalLiqText] = useState(() => {
     const val = currentAnalysis.valores?.salario_liquido;
-    if (val === null || val === undefined) return '';
-    return val.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+    if (val === null || val === undefined || isNaN(Number(val))) return '';
+    return Number(val).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
   });
 
   const [diasText, setDiasText] = useState(() => {

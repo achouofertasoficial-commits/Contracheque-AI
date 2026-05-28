@@ -11,14 +11,22 @@ import CalendarView from './components/CalendarView';
 import HistoryView from './components/HistoryView';
 import MonthDetailsView from './components/MonthDetailsView';
 import SettingsView from './components/SettingsView';
+import { 
+  getUserIdFromEmail,
+  saveAnalysis,
+  getAnalysesByUser,
+  updateAnalysis,
+  deleteAnalysis,
+  findDuplicateAnalysis,
+  calculateSafeMetrics
+} from './services/analysisStorage';
 
 export default function App() {
   const [currentScreen, setCurrentScreen] = useState<Screen>('welcome');
-  const [user, setUser] = useState<User | null>(null);
   
-  // Set up persistent / reactive paycheck data list, pre-loaded with beautiful scenario templates
-  const [analysedList, setAnalysedList] = useState<ContrachequeAnalise[]>(() => {
-    const cached = localStorage.getItem('contracheque_ai_list');
+  // Cache user login details
+  const [user, setUser] = useState<User | null>(() => {
+    const cached = localStorage.getItem('contracheque_ai_user');
     if (cached) {
       try {
         return JSON.parse(cached);
@@ -26,37 +34,82 @@ export default function App() {
         console.error(err);
       }
     }
-    return INITIAL_ANALYSED_LIST;
+    return null;
   });
+  
+  const [analysedList, setAnalysedList] = useState<ContrachequeAnalise[]>([]);
+  
+  // Duplicate Save Prompt State
+  const [showDuplicateSaveDialog, setShowDuplicateSaveDialog] = useState(false);
+  const [duplicateConflictItem, setDuplicateConflictItem] = useState<any | null>(null);
+  const [pendingAnalysisToSave, setPendingAnalysisToSave] = useState<any | null>(null);
 
   // Keep ID of month currently focused under "Detalhes do mês" view
-  const [selectedMonthId, setSelectedMonthId] = useState<string>(() => {
-    return analysedList[0]?.id || "item-1";
-  });
+  const [selectedMonthId, setSelectedMonthId] = useState<string>("");
 
   // Store parsed but unconfirmed JSON extraction
   const [currentAnalysis, setCurrentAnalysis] = useState<any>(null);
   const [isLoading, setIsLoading] = useState(false);
 
-  // Sync to localstorage
+  // Sync list based on active user
   useEffect(() => {
-    localStorage.setItem('contracheque_ai_list', JSON.stringify(analysedList));
-    if (analysedList.length > 0 && !selectedMonthId) {
-      setSelectedMonthId(analysedList[0].id);
+    const loadAnalysesForUser = async () => {
+      const email = user?.email || "joao.silva@exemplo.com.br";
+      const userId = getUserIdFromEmail(email);
+      const list = await getAnalysesByUser(userId);
+      
+      if (list.length === 0) {
+        // Seed database for this specific user to maintain visual design approval
+        const workerNome = user?.nome || "João Silva";
+        const seeded = INITIAL_ANALYSED_LIST.map(item => {
+          const cloned = JSON.parse(JSON.stringify(item));
+          cloned.user_id = userId;
+          cloned.trabalhador.nome = workerNome;
+          return calculateSafeMetrics(cloned);
+        });
+        
+        for (const item of seeded) {
+          await saveAnalysis(item, userId);
+        }
+        setAnalysedList(seeded);
+        if (seeded.length > 0) {
+          setSelectedMonthId(seeded[0].id);
+        }
+      } else {
+        setAnalysedList(list);
+        if (list.length > 0) {
+          setSelectedMonthId(list[0].id);
+        }
+      }
+    };
+    loadAnalysesForUser();
+  }, [user]);
+
+  // Sync to localstorage current list for backup compatibility
+  useEffect(() => {
+    if (analysedList.length > 0) {
+      localStorage.setItem('contracheque_ai_list', JSON.stringify(analysedList));
+      if (!selectedMonthId) {
+        setSelectedMonthId(analysedList[0].id);
+      }
     }
   }, [analysedList]);
 
   const handleLogin = (authenticatedUser: User) => {
     setUser(authenticatedUser);
+    localStorage.setItem('contracheque_ai_user', JSON.stringify(authenticatedUser));
+    setCurrentScreen('dashboard');
   };
 
   const handleLogout = () => {
     setUser(null);
+    localStorage.removeItem('contracheque_ai_user');
     setCurrentScreen('welcome');
   };
 
   const handleUpdateUser = (updatedUser: User) => {
     setUser(updatedUser);
+    localStorage.setItem('contracheque_ai_user', JSON.stringify(updatedUser));
   };
 
   // Callback when AI finishes scanning
@@ -207,14 +260,30 @@ export default function App() {
 
     merged.itens = deduplicatePaycheckItems(allItems, isComplementar);
 
-    // If NOT complementary option is confirmed, we can adjust totals to reflect deduplicated sum correctly
+    // If NOT complementary option is confirmed, we can adjust totals to reflect deduplicated sum correctly, and mark adiantamento
     if (!isComplementar) {
+      merged.itens.forEach((it: any) => {
+        const lowerName = String(it.nome).toLowerCase();
+        if ((lowerName.includes("adiantamento") || lowerName.includes("antecipa") || lowerName.includes("via folha")) && it.tipo === "desconto") {
+          it.ja_recebido = true;
+        }
+      });
+
       merged.valores.total_descontos = merged.itens
-        .filter((it: any) => it.tipo === "desconto")
+        .filter((it: any) => it.tipo === "desconto" && !it.ja_recebido)
         .reduce((sum: number, it: any) => sum + it.valor, 0);
+
       merged.valores.total_adicionais = merged.itens
-        .filter((it: any) => it.tipo === "provento")
+        .filter((it: any) => it.tipo === "provento" && !String(it.nome).toLowerCase().includes("salario base"))
         .reduce((sum: number, it: any) => sum + it.valor, 0);
+
+      // Avoid double-counting gross and net
+      const maxGross = Math.max(...results.map(r => r.valores?.salario_bruto || 0));
+      merged.valores.salario_bruto = maxGross;
+      const nonZeroLiquid = results.find(r => (r.valores?.salario_liquido || 0) > 0);
+      if (nonZeroLiquid) {
+        merged.valores.salario_liquido = nonZeroLiquid.valores.salario_liquido;
+      }
     }
 
     workFields.forEach(f => {
@@ -449,13 +518,78 @@ export default function App() {
   };
 
   // Saved confirmed paycheck
-  const handleConfirmAnalysis = (finalParsedDoc: ContrachequeAnalise) => {
-    setAnalysedList(prev => [finalParsedDoc, ...prev]);
-    setSelectedMonthId(finalParsedDoc.id);
+  const handleSaveWithChoice = async (choice: 'substitute' | 'new_version' | 'cancel') => {
+    if (choice === 'cancel') {
+      setShowDuplicateSaveDialog(false);
+      setDuplicateConflictItem(null);
+      setPendingAnalysisToSave(null);
+      return;
+    }
+
+    const email = user?.email || "joao.silva@exemplo.com.br";
+    const userId = getUserIdFromEmail(email);
+
+    if (choice === 'substitute' && duplicateConflictItem) {
+      // Replace the duplicate previous item in local history
+      const updatedItem = calculateSafeMetrics({ 
+        ...pendingAnalysisToSave, 
+        id: duplicateConflictItem.id, 
+        user_id: userId, 
+        created_at: new Date().toISOString() 
+      });
+      await updateAnalysis(duplicateConflictItem.id, updatedItem);
+      
+      const list = await getAnalysesByUser(userId);
+      setAnalysedList(list);
+      setSelectedMonthId(duplicateConflictItem.id);
+    } else if (choice === 'new_version' && pendingAnalysisToSave) {
+      // Save as a new version: change ID slightly to avoid key duplicates
+      const newId = `pc-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
+      const itemToSave = calculateSafeMetrics({ 
+        ...pendingAnalysisToSave, 
+        id: newId, 
+        user_id: userId, 
+        created_at: new Date().toISOString() 
+      });
+      await saveAnalysis(itemToSave, userId);
+
+      const list = await getAnalysesByUser(userId);
+      setAnalysedList(list);
+      setSelectedMonthId(newId);
+    }
+
+    setShowDuplicateSaveDialog(false);
+    setDuplicateConflictItem(null);
+    setPendingAnalysisToSave(null);
     setCurrentAnalysis(null);
-    
-    // Auto-navigate to dashboard so charts are immediately updated
     setCurrentScreen('dashboard');
+  };
+
+  // Saved confirmed paycheck
+  const handleConfirmAnalysis = async (finalParsedDoc: ContrachequeAnalise) => {
+    const email = user?.email || "joao.silva@exemplo.com.br";
+    const userId = getUserIdFromEmail(email);
+    
+    // Set user_id and make sure calculations are correct
+    const preparedDoc = calculateSafeMetrics({
+      ...finalParsedDoc,
+      user_id: userId,
+      uploadedAt: finalParsedDoc.uploadedAt || new Date().toISOString()
+    });
+
+    const duplicate = await findDuplicateAnalysis(preparedDoc, userId);
+    if (duplicate) {
+      setDuplicateConflictItem(duplicate);
+      setPendingAnalysisToSave(preparedDoc);
+      setShowDuplicateSaveDialog(true);
+    } else {
+      await saveAnalysis(preparedDoc, userId);
+      const list = await getAnalysesByUser(userId);
+      setAnalysedList(list);
+      setSelectedMonthId(preparedDoc.id);
+      setCurrentAnalysis(null);
+      setCurrentScreen('dashboard');
+    }
   };
 
   const handleDiscardAnalysis = () => {
@@ -641,6 +775,47 @@ export default function App() {
               >
                 <span className="material-symbols-outlined text-[16px]">cancel</span>
                 <span>Não, Cancelar Análise</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Duplicate Save Dialog Modal */}
+      {showDuplicateSaveDialog && pendingAnalysisToSave && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center z-50 p-4 animate-fadeIn">
+          <div className="bg-white rounded-3xl max-w-sm w-full p-6 shadow-2xl border border-slate-100 scale-95 animate-scaleUp text-center">
+            <div className="w-12 h-12 rounded-full bg-amber-50 flex items-center justify-center text-amber-500 mb-4 mx-auto animate-bounce animate-duration-1000">
+              <span className="material-symbols-outlined text-[24px]">warning</span>
+            </div>
+            <h3 className="text-base font-extrabold text-slate-900 mb-2">
+              Holerite Duplicado Detectado
+            </h3>
+            <p className="text-xs text-slate-500 leading-relaxed mb-6">
+              Já existe uma análise salva para este mês e empresa ({pendingAnalysisToSave.competencia?.mes} {pendingAnalysisToSave.competencia?.ano}). Deseja substituir a análise anterior ou salvar como nova versão?
+            </p>
+            <div className="flex flex-col gap-2">
+              <button
+                onClick={() => handleSaveWithChoice('substitute')}
+                className="w-full bg-slate-950 hover:bg-slate-900 text-white font-bold py-3 text-xs rounded-xl shadow-xs transition-colors flex items-center justify-center gap-1.5 cursor-pointer"
+              >
+                <span className="material-symbols-outlined text-[16px]">sync</span>
+                <span>Substituir anterior</span>
+              </button>
+              
+              <button
+                onClick={() => handleSaveWithChoice('new_version')}
+                className="w-full bg-slate-50 hover:bg-slate-100 text-slate-800 border border-slate-250 font-bold py-3 text-xs rounded-xl transition-all flex items-center justify-center gap-1.5 cursor-pointer"
+              >
+                <span className="material-symbols-outlined text-[16px]">add_circle</span>
+                <span>Salvar nova versão</span>
+              </button>
+
+              <button
+                onClick={() => handleSaveWithChoice('cancel')}
+                className="w-full bg-transparent hover:bg-rose-50 text-rose-600 font-bold py-2 text-[10px] rounded-xl transition-colors mt-2 cursor-pointer"
+              >
+                Cancelar
               </button>
             </div>
           </div>

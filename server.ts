@@ -622,7 +622,32 @@ Importante: Não invente dados. Se não encontrar dias trabalhados, horas trabal
       }
     });
 
+    // Deduplicate items safely
     resultObj.itens = deduplicatePaycheckItems(allCombinedItems, false);
+
+    // Filter and mark adiantamento so we don't treat it as a new loss (não somar descontos como se fossem nova perda)
+    let adiantamentoValuePaid = 0;
+    resultObj.itens.forEach((it: any) => {
+      const lowerName = String(it.nome).toLowerCase();
+      if ((lowerName.includes("adiantamento") || lowerName.includes("antecipa") || lowerName.includes("via folha")) && it.tipo === "desconto") {
+        it.ja_recebido = true;
+        adiantamentoValuePaid += it.valor;
+      }
+    });
+
+    // Ensure we do not sum adiantamento into lost values (não somar descontos como se fossem nova perda)
+    resultObj.valores.total_descontos = resultObj.itens
+      .filter((it: any) => it.tipo === "desconto" && !it.ja_recebido)
+      .reduce((sum: number, it: any) => sum + it.valor, 0);
+
+    // Calculate total proventos/adicionais accurately without duplication
+    resultObj.valores.total_adicionais = resultObj.itens
+      .filter((it: any) => it.tipo === "provento" && !String(it.nome).toLowerCase().includes("salario base"))
+      .reduce((sum: number, it: any) => sum + it.valor, 0);
+
+    // Keep the maximum non-zero salary bruto we found to avoid duplication of bruto
+    const maxGrossDoc = analyzedResults.reduce((max, r) => (r.valores?.salario_bruto || 0) > (max.valores?.salario_bruto || 0) ? r : max, first);
+    resultObj.valores.salario_bruto = maxGrossDoc.valores.salario_bruto;
 
     resultObj.alertas = resultObj.alertas || [];
     if (!resultObj.alertas.some((a: any) => a.mensagem.includes("adiantamento"))) {

@@ -11,8 +11,8 @@ export default function AnalysisView({ currentAnalysis, onConfirm, onDiscard }: 
   if (!currentAnalysis) return null;
 
   // Extract variables safely
-  const trabalhadorNome = currentAnalysis.trabalhador?.nome || "Trabalhador";
-  const empresaNome = currentAnalysis.empresa?.nome || "Empresa não informada";
+  const trabalhadorNome = currentAnalysis.trabalhador?.nome || "Não informado";
+  const empresaNome = currentAnalysis.empresa?.nome || "Não informado";
   const competenciaMes = currentAnalysis.competencia?.mes || "Mês Corrente";
   const competenciaAno = currentAnalysis.competencia?.ano || "Ano";
   const trabalhadorTipo = currentAnalysis.trabalhador?.tipo || "mensalista";
@@ -46,28 +46,27 @@ export default function AnalysisView({ currentAnalysis, onConfirm, onDiscard }: 
     return acc;
   }, 0);
 
+  const safeDiv = (num: any, div: any): number | null => {
+    if (num === null || num === undefined || isNaN(Number(num))) return null;
+    if (div === null || div === undefined || isNaN(Number(div)) || Number(div) === 0) return null;
+    return Number(num) / Number(div);
+  };
+
   const horasDsrIntermitente = currentAnalysis.trabalho?.horas_dsr_intermitente || null;
-  const dsrPorHora = currentAnalysis.metricas_calculadas?.dsr_por_hora ?? 
-    ((dsrValor && horasDsrIntermitente && horasDsrIntermitente > 0) ? dsrValor / horasDsrIntermitente : null);
+  const dsrPorHora = currentAnalysis.metricas_calculadas?.dsr_por_hora ?? safeDiv(dsrValor, horasDsrIntermitente);
 
   // Calculated metrics from complements or fallbacks
-  const ganhoPorDia = currentAnalysis.metricas_calculadas?.ganho_por_dia ?? 
-    ((salLiq && diasTrabalhados) ? salLiq / diasTrabalhados : null);
-  const ganhoPorHora = currentAnalysis.metricas_calculadas?.ganho_por_hora ?? 
-    ((salLiq && horasTrabalhadas) ? salLiq / horasTrabalhadas : null);
-  const descontoPorDia = currentAnalysis.metricas_calculadas?.desconto_por_dia ?? 
-    ((totDescontos && diasTrabalhados) ? totDescontos / diasTrabalhados : null);
-  const adicionalPorDia = currentAnalysis.metricas_calculadas?.adicional_por_dia ?? 
-    ((totAdicionais && diasTrabalhados) ? totAdicionais / diasTrabalhados : null);
-  const adicionalNoturnoPorHora = currentAnalysis.metricas_calculadas?.adicional_noturno_por_hora ?? 
-    ((noturnasValor && noturnasQtd) ? noturnasValor / noturnasQtd : null);
-  const horasExtrasPorHora = currentAnalysis.metricas_calculadas?.horas_extras_por_hora ?? 
-    ((extrasValor && extrasQtd) ? extrasValor / extrasQtd : null);
+  const ganhoPorDia = currentAnalysis.metricas_calculadas?.ganho_por_dia ?? safeDiv(salLiq, diasTrabalhados);
+  const ganhoPorHora = currentAnalysis.metricas_calculadas?.ganho_por_hora ?? safeDiv(salLiq, horasTrabalhadas);
+  const descontoPorDia = currentAnalysis.metricas_calculadas?.desconto_por_dia ?? safeDiv(totDescontos, diasTrabalhados);
+  const adicionalPorDia = currentAnalysis.metricas_calculadas?.adicional_por_dia ?? safeDiv(totAdicionais, diasTrabalhados);
+  const adicionalNoturnoPorHora = currentAnalysis.metricas_calculadas?.adicional_noturno_por_hora ?? safeDiv(noturnasValor, noturnasQtd);
+  const horasExtrasPorHora = currentAnalysis.metricas_calculadas?.horas_extras_por_hora ?? safeDiv(extrasValor, extrasQtd);
 
   // Currency Formatter Format: R$ 2.779,25
-  const formatBRL = (val: number | null | undefined) => {
-    if (val === null || val === undefined) return "---";
-    return val.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+  const formatBRL = (val: any) => {
+    if (val === null || val === undefined || isNaN(Number(val))) return "---";
+    return Number(val).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
   };
 
   // Percent Formatter
