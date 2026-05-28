@@ -76,9 +76,87 @@ export default function AnalysisView({ currentAnalysis, onConfirm, onDiscard }: 
     return `${val.toFixed(1)}%`;
   };
 
-  // Filter items
-  const descontosItens = currentAnalysis.itens?.filter(i => i.tipo === 'desconto') || [];
-  const adicionaisItens = currentAnalysis.itens?.filter(i => i.tipo === 'provento') || [];
+  // Name Normalization and Deduplication helpers for security
+  const normalizeItemName = (name: string): string => {
+    if (!name) return "";
+    let norm = name.toLowerCase();
+    norm = norm.normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+    norm = norm.replace(/\[\d+\]/g, "");
+    norm = norm.replace(/\(\d+\)/g, "");
+    norm = norm.replace(/\b\d+\b/g, "");
+    norm = norm.replace(/[-_.:/()\[\]]/g, " ");
+
+    let words = norm.split(/\s+/).filter(Boolean);
+    words = words.map(word => {
+      if (word === "adto" || word === "adiant" || word.startsWith("adianta")) return "adiantamento";
+      if (word === "desc" || word === "desconto" || word === "descontos") return "desconto";
+      if (word === "sal" || word === "salario") return "salario";
+      if (word === "ref" || word === "referencia") return "referencia";
+      if (word === "intermit" || word.startsWith("intermite")) return "intermitente";
+      if (word === "liq" || word === "liquido") return "liquido";
+      if (word === "comp" || word === "complem" || word.startsWith("complemen")) return "complementar";
+      if (word.startsWith("alimenta")) return "alimentacao";
+      if (word.startsWith("refeic")) return "refeicao";
+      if (word === "transp" || word.startsWith("transport")) return "transporte";
+      if (word.startsWith("previd")) return "previdencia";
+      return word;
+    });
+
+    return words.join(" ").trim();
+  };
+
+  const areItemsDuplicate = (item1: any, item2: any): boolean => {
+    if (item1.tipo !== item2.tipo) return false;
+
+    const norm1 = normalizeItemName(item1.nome);
+    const norm2 = normalizeItemName(item2.nome);
+
+    const namesSimilar = norm1 === norm2 ||
+                         (norm1.length > 3 && norm2.length > 3 && (norm1.includes(norm2) || norm2.includes(norm1)));
+
+    if (!namesSimilar) return false;
+
+    const valDiff = Math.abs(item1.valor - item2.valor);
+    const valClose = valDiff < 10 || (Math.min(item1.valor, item2.valor) > 0 && valDiff / Math.min(item1.valor, item2.valor) < 0.1);
+
+    return valClose;
+  };
+
+  const getUniqueDiscountItems = (items: any[]): any[] => {
+    const discounts = items.filter(i => i.tipo === 'desconto');
+    const result: any[] = [];
+    discounts.forEach(item => {
+      const dupeIdx = result.findIndex(existing => areItemsDuplicate(existing, item));
+      if (dupeIdx !== -1) {
+        if (item.nome.length > result[dupeIdx].nome.length && !item.nome.includes("...")) {
+          result[dupeIdx].nome = item.nome;
+        }
+      } else {
+        result.push({ ...item });
+      }
+    });
+    return result;
+  };
+
+  const getUniqueEarningsItems = (items: any[]): any[] => {
+    const earnings = items.filter(i => i.tipo === 'provento');
+    const result: any[] = [];
+    earnings.forEach(item => {
+      const dupeIdx = result.findIndex(existing => areItemsDuplicate(existing, item));
+      if (dupeIdx !== -1) {
+        if (item.nome.length > result[dupeIdx].nome.length && !item.nome.includes("...")) {
+          result[dupeIdx].nome = item.nome;
+        }
+      } else {
+        result.push({ ...item });
+      }
+    });
+    return result;
+  };
+
+  // Filter items (applying the security deduplication)
+  const descontosItens = getUniqueDiscountItems(currentAnalysis.itens || []);
+  const adicionaisItens = getUniqueEarningsItems(currentAnalysis.itens || []);
 
   // Helper smart advice for discounts
   const getDescontoExplanation = (nome: string, valor: number) => {

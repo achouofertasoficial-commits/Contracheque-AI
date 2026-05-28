@@ -137,6 +137,77 @@ function getMockPayload(fileName: string, mimeType?: string): any {
   };
 }
 
+function normalizeItemName(name: string): string {
+  if (!name) return "";
+  let norm = name.toLowerCase();
+  norm = norm.normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+  norm = norm.replace(/\[\d+\]/g, "");
+  norm = norm.replace(/\(\d+\)/g, "");
+  norm = norm.replace(/\b\d+\b/g, "");
+  norm = norm.replace(/[-_.:/()\[\]]/g, " ");
+
+  let words = norm.split(/\s+/).filter(Boolean);
+  words = words.map(word => {
+    if (word === "adto" || word === "adiant" || word.startsWith("adianta")) return "adiantamento";
+    if (word === "desc" || word === "desconto" || word === "descontos") return "desconto";
+    if (word === "sal" || word === "salario") return "salario";
+    if (word === "ref" || word === "referencia") return "referencia";
+    if (word === "intermit" || word.startsWith("intermite")) return "intermitente";
+    if (word === "liq" || word === "liquido") return "liquido";
+    if (word === "comp" || word === "complem" || word.startsWith("complemen")) return "complementar";
+    if (word.startsWith("alimenta")) return "alimentacao";
+    if (word.startsWith("refeic")) return "refeicao";
+    if (word === "transp" || word.startsWith("transport")) return "transporte";
+    if (word.startsWith("previd")) return "previdencia";
+    return word;
+  });
+
+  return words.join(" ").trim();
+}
+
+function areItemsDuplicate(item1: any, item2: any): boolean {
+  if (item1.tipo !== item2.tipo) return false;
+
+  const norm1 = normalizeItemName(item1.nome);
+  const norm2 = normalizeItemName(item2.nome);
+
+  const namesSimilar = norm1 === norm2 ||
+                       (norm1.length > 3 && norm2.length > 3 && (norm1.includes(norm2) || norm2.includes(norm1)));
+
+  if (!namesSimilar) return false;
+
+  const valDiff = Math.abs(item1.valor - item2.valor);
+  const valClose = valDiff < 10 || (Math.min(item1.valor, item2.valor) > 0 && valDiff / Math.min(item1.valor, item2.valor) < 0.1);
+
+  return valClose;
+}
+
+function deduplicatePaycheckItems(items: any[], isComp: boolean = false): any[] {
+  const result: any[] = [];
+  items.forEach(item => {
+    const dupeIdx = result.findIndex(existing => areItemsDuplicate(existing, item));
+    if (dupeIdx !== -1) {
+      const existing = result[dupeIdx];
+      if (isComp) {
+        existing.valor = Number((existing.valor + item.valor).toFixed(2));
+        if (item.nome.length > existing.nome.length && !item.nome.includes("...")) {
+          existing.nome = item.nome;
+        }
+      } else {
+        if (item.nome.length > existing.nome.length && !item.nome.includes("...")) {
+          existing.nome = item.nome;
+        }
+        if (!existing.referencia && item.referencia) {
+          existing.referencia = item.referencia;
+        }
+      }
+    } else {
+      result.push({ ...item });
+    }
+  });
+  return result;
+}
+
 // REST route for Analysis
 app.post('/api/analisar-contracheque', async (req, res) => {
   const { fileData, fileName, mimeType, files } = req.body;
@@ -540,18 +611,18 @@ Importante: Não invente dados. Se não encontrar dias trabalhados, horas trabal
       tipo_consolidacao: "adiantamento_fechamento"
     };
 
-    const existingItemKeys = new Set(resultObj.itens?.map((it: any) => `${it.nome}-${it.tipo}-${it.valor}`.toLowerCase()) || []);
+    let allCombinedItems: any[] = [];
+    if (resultObj.itens && Array.isArray(resultObj.itens)) {
+      allCombinedItems = [...resultObj.itens];
+    }
     analyzedResults.forEach(r => {
       if (r === mainFechamento) return;
-      r.itens?.forEach((it: any) => {
-        const key = `${it.nome}-${it.tipo}-${it.valor}`.toLowerCase();
-        if (!existingItemKeys.has(key)) {
-          existingItemKeys.add(key);
-          if (!resultObj.itens) resultObj.itens = [];
-          resultObj.itens.push(it);
-        }
-      });
+      if (r.itens && Array.isArray(r.itens)) {
+        allCombinedItems.push(...r.itens);
+      }
     });
+
+    resultObj.itens = deduplicatePaycheckItems(allCombinedItems, false);
 
     resultObj.alertas = resultObj.alertas || [];
     if (!resultObj.alertas.some((a: any) => a.mensagem.includes("adiantamento"))) {

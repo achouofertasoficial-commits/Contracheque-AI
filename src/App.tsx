@@ -78,7 +78,7 @@ export default function App() {
     return false;
   };
 
-  const consolidateResults = (results: any[]) => {
+  const consolidateResults = (results: any[], isComplementar: boolean = false) => {
     if (results.length === 0) return null;
     if (results.length === 1) return results[0];
 
@@ -107,7 +107,7 @@ export default function App() {
 
     merged.itens = [];
     merged.alertas = [];
-    const seenItemKeys = new Set<string>();
+    const allItems: any[] = [];
 
     results.forEach((r, rIdx) => {
       valFields.forEach(f => {
@@ -121,13 +121,7 @@ export default function App() {
       });
 
       if (r.itens && Array.isArray(r.itens)) {
-        r.itens.forEach((item: any) => {
-          const key = `${item.nome}-${item.tipo}-${item.valor}`.toLowerCase();
-          if (!seenItemKeys.has(key)) {
-            seenItemKeys.add(key);
-            merged.itens.push(item);
-          }
-        });
+        allItems.push(...r.itens);
       }
 
       if (r.alertas && Array.isArray(r.alertas)) {
@@ -138,6 +132,90 @@ export default function App() {
         });
       }
     });
+
+    // Helper functions for name normalization and deduplication
+    const normalizeItemName = (name: string): string => {
+      if (!name) return "";
+      let norm = name.toLowerCase();
+      norm = norm.normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+      norm = norm.replace(/\[\d+\]/g, "");
+      norm = norm.replace(/\(\d+\)/g, "");
+      norm = norm.replace(/\b\d+\b/g, "");
+      norm = norm.replace(/[-_.:/()\[\]]/g, " ");
+
+      let words = norm.split(/\s+/).filter(Boolean);
+      words = words.map(word => {
+        if (word === "adto" || word === "adiant" || word.startsWith("adianta")) return "adiantamento";
+        if (word === "desc" || word === "desconto" || word === "descontos") return "desconto";
+        if (word === "sal" || word === "salario") return "salario";
+        if (word === "ref" || word === "referencia") return "referencia";
+        if (word === "intermit" || word.startsWith("intermite")) return "intermitente";
+        if (word === "liq" || word === "liquido") return "liquido";
+        if (word === "comp" || word === "complem" || word.startsWith("complemen")) return "complementar";
+        if (word.startsWith("alimenta")) return "alimentacao";
+        if (word.startsWith("refeic")) return "refeicao";
+        if (word === "transp" || word.startsWith("transport")) return "transporte";
+        if (word.startsWith("previd")) return "previdencia";
+        return word;
+      });
+
+      return words.join(" ").trim();
+    };
+
+    const areItemsDuplicate = (item1: any, item2: any): boolean => {
+      if (item1.tipo !== item2.tipo) return false;
+
+      const norm1 = normalizeItemName(item1.nome);
+      const norm2 = normalizeItemName(item2.nome);
+
+      const namesSimilar = norm1 === norm2 ||
+                           (norm1.length > 3 && norm2.length > 3 && (norm1.includes(norm2) || norm2.includes(norm1)));
+
+      if (!namesSimilar) return false;
+
+      const valDiff = Math.abs(item1.valor - item2.valor);
+      const valClose = valDiff < 10 || (Math.min(item1.valor, item2.valor) > 0 && valDiff / Math.min(item1.valor, item2.valor) < 0.1);
+
+      return valClose;
+    };
+
+    const deduplicatePaycheckItems = (items: any[], isComp: boolean): any[] => {
+      const result: any[] = [];
+      items.forEach(item => {
+        const dupeIdx = result.findIndex(existing => areItemsDuplicate(existing, item));
+        if (dupeIdx !== -1) {
+          const existing = result[dupeIdx];
+          if (isComp) {
+            existing.valor = Number((existing.valor + item.valor).toFixed(2));
+            if (item.nome.length > existing.nome.length && !item.nome.includes("...")) {
+              existing.nome = item.nome;
+            }
+          } else {
+            if (item.nome.length > existing.nome.length && !item.nome.includes("...")) {
+              existing.nome = item.nome;
+            }
+            if (!existing.referencia && item.referencia) {
+              existing.referencia = item.referencia;
+            }
+          }
+        } else {
+          result.push({ ...item });
+        }
+      });
+      return result;
+    };
+
+    merged.itens = deduplicatePaycheckItems(allItems, isComplementar);
+
+    // If NOT complementary option is confirmed, we can adjust totals to reflect deduplicated sum correctly
+    if (!isComplementar) {
+      merged.valores.total_descontos = merged.itens
+        .filter((it: any) => it.tipo === "desconto")
+        .reduce((sum: number, it: any) => sum + it.valor, 0);
+      merged.valores.total_adicionais = merged.itens
+        .filter((it: any) => it.tipo === "provento")
+        .reduce((sum: number, it: any) => sum + it.valor, 0);
+    }
 
     workFields.forEach(f => {
       if (merged.trabalho[f] === 0) {
@@ -190,7 +268,7 @@ export default function App() {
 
   const handleConfirmCaso4 = () => {
     if (pendingResultsToConsolidate && pendingResultsToConsolidate.length >= 2) {
-      const consolidated = consolidateResults(pendingResultsToConsolidate);
+      const consolidated = consolidateResults(pendingResultsToConsolidate, true);
       if (consolidated) {
         consolidated.validacao_multipla = {
           status: "ok",
