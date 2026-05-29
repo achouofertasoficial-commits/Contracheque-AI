@@ -20,6 +20,7 @@ export default function UploadView({ onAnalysisComplete, isLoading, setIsLoading
   const [loadingStatus, setLoadingStatus] = useState("Lendo layout do documento...");
   const [dragActive, setDragActive] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [manualAssistResult, setManualAssistResult] = useState<any | null>(null);
 
   const simulateFileSelect = (mockType: 'joao' | 'ana') => {
     setErrorMessage(null);
@@ -191,6 +192,16 @@ export default function UploadView({ onAnalysisComplete, isLoading, setIsLoading
         setIsLoading(false);
         return;
       }
+
+      const isManual = extractedJson.analysis_mode === "manual_assistido" || 
+                       extractedJson.result?.analysis_mode === "manual_assistido" ||
+                       (extractedJson.results && extractedJson.results.some((r: any) => r.analysis_mode === "manual_assistido"));
+
+      if (isManual) {
+        setIsLoading(false);
+        setManualAssistResult(extractedJson);
+        return;
+      }
       
       // Let status show "Concluído!" briefly
       setLoadingStatus("Tudo pronto! Redirecionando...");
@@ -233,6 +244,43 @@ export default function UploadView({ onAnalysisComplete, isLoading, setIsLoading
           </div>
 
           <p className="text-xs text-slate-400 mt-4 font-semibold uppercase tracking-wider">{loadingStatus}</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (manualAssistResult) {
+    return (
+      <div className="flex-grow flex flex-col items-center justify-center p-6 text-center max-w-md mx-auto py-12">
+        <div className="bg-white p-8 rounded-3xl shadow-md border border-slate-100 flex flex-col items-center w-full animate-in fade-in duration-300">
+          <div className="w-16 h-16 rounded-full bg-amber-50 flex items-center justify-center mb-6">
+            <span className="material-symbols-outlined text-amber-600 text-[28px]">edit_note</span>
+          </div>
+
+          <h2 className="text-[17px] font-bold text-slate-900 mb-2">Análise Automatizada Limitada</h2>
+          <p className="text-xs text-slate-500 mb-6 leading-relaxed">
+            Não conseguimos ler este PDF automaticamente agora. Você pode preencher manualmente.
+          </p>
+          
+          <button
+            type="button"
+            onClick={() => onAnalysisComplete(manualAssistResult)}
+            className="w-full bg-slate-900 hover:bg-slate-800 text-white font-semibold text-xs py-3.5 rounded-xl flex items-center justify-center gap-1.5 shadow-md transition-all active:scale-[0.98]"
+          >
+            <span className="material-symbols-outlined text-[16px]">edit</span>
+            Prosseguir com preenchimento manual
+          </button>
+          
+          <button
+            type="button"
+            onClick={() => {
+              setManualAssistResult(null);
+              setSelectedFiles([]);
+            }}
+            className="mt-4 text-[11px] text-slate-500 hover:text-slate-800 font-semibold hover:underline"
+          >
+            Tentar enviar outro arquivo
+          </button>
         </div>
       </div>
     );
