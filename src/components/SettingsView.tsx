@@ -5,14 +5,16 @@ interface SettingsViewProps {
   user: User;
   onUpdateUser: (updated: User) => void;
   onLogout: () => void;
+  onClearAllAnalyses: () => void;
 }
 
-export default function SettingsView({ user, onUpdateUser, onLogout }: SettingsViewProps) {
+export default function SettingsView({ user, onUpdateUser, onLogout, onClearAllAnalyses }: SettingsViewProps) {
   const [userName, setUserName] = useState(user.nome);
   const [userEmail, setUserEmail] = useState(user.email);
   const [workerType, setWorkerType] = useState<"mensalista" | "intermitente">("mensalista");
   const [allowNotifications, setAllowNotifications] = useState(true);
   const [allowSms, setAllowSms] = useState(false);
+  const [showConfirmModal, setShowConfirmModal] = useState(false);
 
   const handleSaveProfile = (e: React.FormEvent) => {
     e.preventDefault();
@@ -91,7 +93,7 @@ export default function SettingsView({ user, onUpdateUser, onLogout }: SettingsV
 
             <button
               type="submit"
-              className="mt-2 h-10 w-full bg-slate-900 hover:bg-slate-800 text-white rounded-lg text-xs font-bold transition-all active:scale-95 shadow-xs"
+              className="mt-2 h-10 w-full bg-slate-900 hover:bg-slate-800 text-white rounded-lg text-xs font-bold transition-all active:scale-95 shadow-xs cursor-pointer"
             >
               Salvar Alterações
             </button>
@@ -109,7 +111,7 @@ export default function SettingsView({ user, onUpdateUser, onLogout }: SettingsV
                   type="checkbox"
                   checked={allowNotifications}
                   onChange={(e) => setAllowNotifications(e.target.checked)}
-                  className="w-4 h-4 text-emerald-800 focus:ring-emerald-800 border-slate-300 rounded"
+                  className="w-4 h-4 text-emerald-800 focus:ring-emerald-800 border-slate-300 rounded cursor-pointer"
                 />
                 <div>
                   <p className="text-xs font-bold text-slate-800">Alertas de contracheques por e-mail</p>
@@ -122,7 +124,7 @@ export default function SettingsView({ user, onUpdateUser, onLogout }: SettingsV
                   type="checkbox"
                   checked={allowSms}
                   onChange={(e) => setAllowSms(e.target.checked)}
-                  className="w-4 h-4 text-emerald-800 focus:ring-emerald-800 border-slate-300 rounded"
+                  className="w-4 h-4 text-emerald-800 focus:ring-emerald-800 border-slate-300 rounded cursor-pointer"
                 />
                 <div>
                   <p className="text-xs font-bold text-slate-800">Notificações SMS legislativas e CLT</p>
@@ -132,6 +134,25 @@ export default function SettingsView({ user, onUpdateUser, onLogout }: SettingsV
             </div>
           </div>
 
+          {/* Gerenciar análises */}
+          <div className="bg-white rounded-2xl p-6 border border-slate-100 shadow-xs flex flex-col gap-4">
+            <h3 className="font-bold text-slate-900 text-sm border-b border-slate-50 pb-2">Gerenciar análises</h3>
+            <div className="flex flex-col gap-1">
+              <p className="text-xs font-bold text-slate-800">Limpar histórico de contracheques</p>
+              <p className="text-[11px] text-slate-400 leading-relaxed">
+                Remove todas as análises de contracheques salvas nesta conta. O dashboard, histórico, médias, gráficos e comparativos serão zerados.
+              </p>
+            </div>
+            
+            <button
+              onClick={() => setShowConfirmModal(true)}
+              className="h-10 w-full bg-rose-50 hover:bg-rose-100 border border-rose-200 text-rose-700 rounded-lg text-xs font-bold transition-all active:scale-95 flex items-center justify-center gap-1.5 cursor-pointer"
+            >
+              <span className="material-symbols-outlined text-[16px]">delete_sweep</span>
+              <span>Limpar todas as análises</span>
+            </button>
+          </div>
+
           {/* Logout Action */}
           <div className="bg-white rounded-2xl p-6 border border-slate-100 shadow-xs flex flex-col gap-4">
             <h3 className="font-bold text-slate-900 text-sm border-b border-slate-50 pb-2">Sessão do Aplicativo</h3>
@@ -139,7 +160,7 @@ export default function SettingsView({ user, onUpdateUser, onLogout }: SettingsV
             
             <button
               onClick={onLogout}
-              className="h-10 w-full bg-red-50 hover:bg-red-100 border border-red-200 text-red-700 rounded-lg text-xs font-bold transition-all active:scale-95 flex items-center justify-center gap-1.5"
+              className="h-10 w-full bg-red-50 hover:bg-red-100 border border-red-200 text-red-700 rounded-lg text-xs font-bold transition-all active:scale-95 flex items-center justify-center gap-1.5 cursor-pointer"
             >
               <span className="material-symbols-outlined text-[16px]">logout</span>
               <span>Sair da conta</span>
@@ -148,6 +169,40 @@ export default function SettingsView({ user, onUpdateUser, onLogout }: SettingsV
         </div>
 
       </div>
+
+      {/* Confirmation Modal */}
+      {showConfirmModal && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center z-50 p-4 animate-fadeIn">
+          <div className="bg-white rounded-3xl max-w-sm w-full p-6 shadow-2xl border border-slate-100 scale-95 animate-scaleUp text-center">
+            <div className="w-12 h-12 rounded-full bg-rose-50 flex items-center justify-center text-rose-600 mb-4 mx-auto animate-bounce animate-duration-1000">
+              <span className="material-symbols-outlined text-[24px]">warning</span>
+            </div>
+            <h3 className="text-base font-extrabold text-slate-900 mb-2">
+              Tem certeza que deseja limpar todas as análises?
+            </h3>
+            <p className="text-xs text-slate-500 leading-relaxed mb-6">
+              Essa ação removerá todos os contracheques analisados, valores salvos, gráficos, médias e histórico desta conta. Essa ação não pode ser desfeita.
+            </p>
+            <div className="flex flex-col sm:flex-row gap-2">
+              <button
+                onClick={() => setShowConfirmModal(false)}
+                className="flex-1 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold py-2.5 text-xs rounded-xl transition-colors cursor-pointer"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={() => {
+                  setShowConfirmModal(false);
+                  onClearAllAnalyses();
+                }}
+                className="flex-1 bg-rose-650 hover:bg-rose-700 text-white font-bold py-2.5 text-xs rounded-xl shadow-xs transition-colors cursor-pointer"
+              >
+                Sim, limpar tudo
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

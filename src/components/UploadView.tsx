@@ -1,12 +1,14 @@
 import React, { useState } from 'react';
+import { User } from '../types';
 
 interface UploadViewProps {
   onAnalysisComplete: (result: any) => void;
   isLoading: boolean;
   setIsLoading: (val: boolean) => void;
+  user: User | null;
 }
 
-export default function UploadView({ onAnalysisComplete, isLoading, setIsLoading }: UploadViewProps) {
+export default function UploadView({ onAnalysisComplete, isLoading, setIsLoading, user }: UploadViewProps) {
   const [selectedFiles, setSelectedFiles] = useState<{ 
     name: string; 
     size: string; 
@@ -193,7 +195,7 @@ export default function UploadView({ onAnalysisComplete, isLoading, setIsLoading
           className="flex items-center gap-1.5 text-xs text-slate-500 hover:text-slate-800 transition-colors font-semibold"
         >
           <span className="material-symbols-outlined text-[16px]">arrow_back</span>
-          <span>Voltar ao Dashboard</span>
+          <span>{user ? 'Voltar ao Dashboard' : 'Voltar ao Início'}</span>
         </button>
       </div>
 

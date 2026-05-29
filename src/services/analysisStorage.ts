@@ -267,3 +267,22 @@ export function compareMonthlyAnalyses(analysisA: any, analysisB: any) {
     motivo
   };
 }
+
+/**
+ * Removes all analyses from storage for the specified user and sets a history cleared flag.
+ */
+export function clearAnalysesByUser(userId: string): void {
+  const list = getAllAnalysesSync();
+  const currentUserId = userId || 'local-user-anonymous';
+  const remaining = list.filter((item: any) => item.user_id !== currentUserId);
+  saveAllAnalysesSync(remaining);
+  localStorage.setItem(`contracheque_ai_history_cleared_${currentUserId}`, "true");
+}
+
+/**
+ * Checks if the user has explicitly cleared their history.
+ */
+export function hasUserClearedHistory(userId: string): boolean {
+  const currentUserId = userId || 'local-user-anonymous';
+  return localStorage.getItem(`contracheque_ai_history_cleared_${currentUserId}`) === "true";
+}

@@ -9,15 +9,57 @@ interface DashboardViewProps {
 }
 
 export default function DashboardView({ analysedList, user, onNavigate, setSelectedMonthId }: DashboardViewProps) {
+  if (analysedList.length === 0) {
+    return (
+      <div className="flex flex-col items-center justify-center py-20 px-4 text-center max-w-md mx-auto">
+        <div className="w-16 h-16 bg-slate-50 rounded-2xl flex items-center justify-center text-slate-450 border border-slate-100 mb-6">
+          <span className="material-symbols-outlined text-3xl">upload_file</span>
+        </div>
+        <h2 className="text-lg font-bold text-slate-800 mb-2">Sem contracheques analisados</h2>
+        <p className="text-xs text-slate-500 leading-relaxed mb-6">
+          Você limpou o histórico ou ainda não enviou nenhum contracheque. Envie seu holerite para começar a monitorar suas rendas e descontos de forma unificada!
+        </p>
+        <button
+          onClick={() => onNavigate('upload')}
+          className="bg-emerald-800 hover:bg-emerald-900 text-white rounded-full px-6 py-3 font-bold text-xs flex items-center gap-1.5 shadow-sm active:scale-95 transition-all cursor-pointer"
+        >
+          <span className="material-symbols-outlined text-[16px]">add</span>
+          <span>Enviar contracheque</span>
+        </button>
+      </div>
+    );
+  }
+
   // Use the first (latest) analysed item to populate wages
   const latestItem = analysedList[0];
 
-  if (!latestItem) {
-    return (
-      <div className="text-center py-12">
-        <p className="text-slate-500">Nenhum contracheque cadastrado. Carregue um documento para começar!</p>
-      </div>
-    );
+  // Comparative month details
+  const previousItem = analysedList[1];
+  let comparisonText = "Sem mês anterior para comparar";
+  let showTrendingIcon = false;
+  let isPositive = false;
+
+  if (previousItem) {
+    const currentNet = latestItem.valores.salario_liquido || 0;
+    const previousNet = previousItem.valores.salario_liquido || 0;
+
+    if (previousNet > 0) {
+      const percentageDiff = ((currentNet - previousNet) / previousNet) * 100;
+      const roundedDiff = Math.abs(percentageDiff).toFixed(1);
+      
+      if (percentageDiff > 0) {
+        comparisonText = `+${roundedDiff}% em relação ao mês anterior`;
+        showTrendingIcon = true;
+        isPositive = true;
+      } else if (percentageDiff < 0) {
+        comparisonText = `-${roundedDiff}% em relação ao mês anterior`;
+        showTrendingIcon = true;
+        isPositive = false;
+      } else {
+        comparisonText = `Sem variação em relação ao mês anterior`;
+        showTrendingIcon = false;
+      }
+    }
   }
 
   // Format money function
@@ -62,9 +104,19 @@ export default function DashboardView({ analysedList, user, onNavigate, setSelec
           <h1 className="text-2xl font-bold text-slate-950">Olá, {user.nome}</h1>
           <p className="text-xs text-slate-500 mt-0.5">Aqui está o resumo financeiro consolidado do seu último contracheque.</p>
         </div>
-        <div className="inline-flex items-center gap-1.5 bg-emerald-50 border border-emerald-100 px-4 py-2 rounded-full shadow-xs">
-          <span className="material-symbols-outlined text-emerald-700 text-sm">trending_up</span>
-          <span className="text-xs text-emerald-800 font-semibold">+5% em relação ao mês anterior</span>
+        <div className={`inline-flex items-center gap-1.5 px-4 py-2 rounded-full shadow-xs border ${
+          previousItem 
+            ? isPositive 
+              ? 'bg-emerald-50 border-emerald-100 text-emerald-800' 
+              : 'bg-rose-50 border-rose-100 text-rose-800'
+            : 'bg-slate-55 border-slate-100/80 text-slate-500'
+        }`}>
+          {showTrendingIcon && (
+            <span className={`material-symbols-outlined text-sm ${isPositive ? 'text-emerald-700' : 'text-rose-700'}`}>
+              {isPositive ? 'trending_up' : 'trending_down'}
+            </span>
+          )}
+          <span className="text-xs font-semibold">{comparisonText}</span>
         </div>
       </section>
 

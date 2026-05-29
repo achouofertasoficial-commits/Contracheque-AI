@@ -18,7 +18,9 @@ import {
   updateAnalysis,
   deleteAnalysis,
   findDuplicateAnalysis,
-  calculateSafeMetrics
+  calculateSafeMetrics,
+  clearAnalysesByUser,
+  hasUserClearedHistory
 } from './services/analysisStorage';
 
 export default function App() {
@@ -59,6 +61,11 @@ export default function App() {
       const list = await getAnalysesByUser(userId);
       
       if (list.length === 0) {
+        if (hasUserClearedHistory(userId)) {
+          setAnalysedList([]);
+          setSelectedMonthId("");
+          return;
+        }
         // Seed database for this specific user to maintain visual design approval
         const workerNome = user?.nome || "João Silva";
         const seeded = INITIAL_ANALYSED_LIST.map(item => {
@@ -87,11 +94,9 @@ export default function App() {
 
   // Sync to localstorage current list for backup compatibility
   useEffect(() => {
-    if (analysedList.length > 0) {
-      localStorage.setItem('contracheque_ai_list', JSON.stringify(analysedList));
-      if (!selectedMonthId) {
-        setSelectedMonthId(analysedList[0].id);
-      }
+    localStorage.setItem('contracheque_ai_list', JSON.stringify(analysedList));
+    if (analysedList.length > 0 && !selectedMonthId) {
+      setSelectedMonthId(analysedList[0].id);
     }
   }, [analysedList]);
 
@@ -110,6 +115,16 @@ export default function App() {
   const handleUpdateUser = (updatedUser: User) => {
     setUser(updatedUser);
     localStorage.setItem('contracheque_ai_user', JSON.stringify(updatedUser));
+  };
+
+  const handleClearAllAnalyses = () => {
+    if (!user) return;
+    const userId = getUserIdFromEmail(user.email);
+    clearAnalysesByUser(userId);
+    setAnalysedList([]);
+    setSelectedMonthId("");
+    setCurrentAnalysis(null);
+    setCurrentScreen("dashboard");
   };
 
   // Callback when AI finishes scanning
@@ -420,7 +435,11 @@ export default function App() {
       }
     } else {
       setIsLoading(false);
-      setCurrentScreen('upload');
+      if (user) {
+        setCurrentScreen('dashboard');
+      } else {
+        setCurrentScreen('welcome');
+      }
     }
   };
 
@@ -631,6 +650,7 @@ export default function App() {
             onAnalysisComplete={handleAnalysisComplete}
             isLoading={isLoading}
             setIsLoading={setIsLoading}
+            user={user}
           />
         )}
 
@@ -659,7 +679,7 @@ export default function App() {
         )}
 
         {currentScreen === 'calendar' && (
-          <CalendarView onNavigate={setCurrentScreen} />
+          <CalendarView onNavigate={setCurrentScreen} user={user} />
         )}
 
         {currentScreen === 'history' && (
@@ -675,6 +695,7 @@ export default function App() {
             user={user}
             onUpdateUser={handleUpdateUser}
             onLogout={handleLogout}
+            onClearAllAnalyses={handleClearAllAnalyses}
           />
         )}
       </main>

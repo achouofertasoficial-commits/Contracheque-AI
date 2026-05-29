@@ -373,48 +373,107 @@ Importante: Não invente dados. Se não encontrar dias trabalhados, horas trabal
       };
       analyzedResults.push(mockResult);
     } else {
-      try {
-        console.log(`[Contracheque AI Server] Enviando ${file.name} ao Gemini API...`);
-        let rawBase64 = file.fileData;
-        if (file.fileData.includes('base64,')) {
-          rawBase64 = file.fileData.split('base64,')[1];
-        }
+      let lastError: any = null;
+      let success = false;
+      let response: any = null;
+      const maxRetries = 3;
+      let currentDelay = 1000; // start with 1 second
 
-        const ai = new GoogleGenAI({
-          apiKey: apiKey,
-          httpOptions: {
-            headers: {
-              'User-Agent': 'aistudio-build',
-            }
+      for (let attempt = 1; attempt <= maxRetries; attempt++) {
+        try {
+          console.log(`[Contracheque AI Server] Enviando ${file.name} ao Gemini API (Tentativa ${attempt}/${maxRetries})...`);
+          
+          let rawBase64 = file.fileData;
+          if (file.fileData.includes('base64,')) {
+            rawBase64 = file.fileData.split('base64,')[1];
           }
-        });
 
-        const parsedMime = file.mimeType || "image/png";
-
-        const response = await ai.models.generateContent({
-          model: "gemini-3.5-flash",
-          contents: [
-            {
-              inlineData: {
-                mimeType: parsedMime,
-                data: rawBase64
+          const ai = new GoogleGenAI({
+            apiKey: apiKey,
+            httpOptions: {
+              headers: {
+                'User-Agent': 'aistudio-build',
               }
-            },
-            modelPrompt
-          ],
-          config: {
-            responseMimeType: "application/json",
-            responseSchema: aiSchema
-          }
-        });
+            }
+          });
 
-        const parsedStr = response.text?.trim() || "";
-        const resultObj = JSON.parse(parsedStr);
-        resultObj.id = `pc-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
-        if (!resultObj.validacao_multipla) {
-          resultObj.validacao_multipla = {
+          const parsedMime = file.mimeType || "image/png";
+
+          response = await ai.models.generateContent({
+            model: "gemini-3.5-flash",
+            contents: [
+              {
+                inlineData: {
+                  mimeType: parsedMime,
+                  data: rawBase64
+                }
+              },
+              modelPrompt
+            ],
+            config: {
+              responseMimeType: "application/json",
+              responseSchema: aiSchema
+            }
+          });
+
+          success = true;
+          break; // Success! Exit the retry loop.
+        } catch (err: any) {
+          lastError = err;
+          console.warn(`[Contracheque AI Server] Tentativa ${attempt} falhou para ${file.name}. Erro: ${err.message || err}`);
+          
+          const errorMsg = String(err.message || "").toLowerCase();
+          const isTransient = 
+            err.status === 503 || 
+            err.status === 429 ||
+            errorMsg.includes("503") || 
+            errorMsg.includes("429") || 
+            errorMsg.includes("unavailable") || 
+            errorMsg.includes("overloaded") || 
+            errorMsg.includes("high demand") || 
+            errorMsg.includes("rate limit") || 
+            errorMsg.includes("exhausted");
+
+          if (isTransient && attempt < maxRetries) {
+            console.log(`[Contracheque AI Server] Erro transiente de rede/demanda detectado. Retentando em ${currentDelay}ms...`);
+            await new Promise(resolve => setTimeout(resolve, currentDelay));
+            currentDelay *= 2; // exponential backoff
+          } else {
+            // Unrecoverable error or out of retries
+            break;
+          }
+        }
+      }
+
+      if (success && response) {
+        try {
+          const parsedStr = response.text?.trim() || "";
+          const resultObj = JSON.parse(parsedStr);
+          resultObj.id = `pc-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
+          if (!resultObj.validacao_multipla) {
+            resultObj.validacao_multipla = {
+              status: "ok",
+              motivo: "Arquivo processado individualmente.",
+              mesma_competencia: true,
+              mesma_empresa: true,
+              mesmo_trabalhador: true,
+              documentos_relacionados: true,
+              deve_consolidar: true,
+              tipo_consolidacao: "unica"
+            };
+          }
+          analyzedResults.push(resultObj);
+        } catch (parseErr: any) {
+          console.error(`[Contracheque AI Server] Erro ao tratar parse de JSON retornado pelo Gemini para ${file.name}:`, parseErr);
+          const fallback = getMockPayload(file.name, file.mimeType);
+          fallback.alertas.unshift({
+            tipo: "atenção",
+            mensagem: `Aviso: Análise simulada devido a falha de formatação do JSON retornado pela IA.`
+          });
+          fallback.id = `pc-fallback-${Date.now()}`;
+          fallback.validacao_multipla = {
             status: "ok",
-            motivo: "Arquivo processado individualmente.",
+            motivo: `Simulada devido a falha de leitura do JSON retornado: ${parseErr.message}`,
             mesma_competencia: true,
             mesma_empresa: true,
             mesmo_trabalhador: true,
@@ -422,19 +481,20 @@ Importante: Não invente dados. Se não encontrar dias trabalhados, horas trabal
             deve_consolidar: true,
             tipo_consolidacao: "unica"
           };
+          analyzedResults.push(fallback);
         }
-        analyzedResults.push(resultObj);
-      } catch (err: any) {
-        console.error(`[Contracheque AI Server] Erro ao analisar ${file.name} via Gemini API:`, err);
+      } else {
+        const err = lastError || new Error("Unknown Gemini API error");
+        console.error(`[Contracheque AI Server] Erro persistente ao analisar ${file.name} via Gemini API:`, err);
         const fallback = getMockPayload(file.name, file.mimeType);
         fallback.alertas.unshift({
           tipo: "atenção",
-          mensagem: `Aviso: Análise simulada gerada como fallback devido ao erro: ${err.message}`
+          mensagem: `Aviso: Análise simulada gerada em modo demonstração (fallback) devido a instabilidades temporárias no servidor da IA.`
         });
         fallback.id = `pc-fallback-${Date.now()}`;
         fallback.validacao_multipla = {
           status: "ok",
-          motivo: `Simulada devido ao erro da API: ${err.message}`,
+          motivo: `Simulada devido a erro temporário/persistente da API: ${err.message}`,
           mesma_competencia: true,
           mesma_empresa: true,
           mesmo_trabalhador: true,
