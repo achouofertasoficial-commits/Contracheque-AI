@@ -462,6 +462,26 @@ export default function App() {
     merged.trabalho = { ...analysis.trabalho };
     merged.itens = (analysis.itens || []).map((it: any) => ({ ...it }));
 
+    // Extract hours and total bruto fallbacks
+    if (merged.valores.provento_horas_trabalhadas === undefined || merged.valores.provento_horas_trabalhadas === null) {
+      const targetItem = merged.itens?.find((it: any) => {
+        if (it.tipo !== "provento") return false;
+        const name = (it.nome || "").toLowerCase();
+        return (
+          name === "horas trabalhadas" ||
+          name === "horas trabalhadas - interm" ||
+          name === "horas trabalhadas - interm." ||
+          name === "horas trabalhadas - intermitente" ||
+          name.includes("horas trab")
+        );
+      });
+      merged.valores.provento_horas_trabalhadas = targetItem ? targetItem.valor : null;
+    }
+
+    if (merged.valores.bruto_total_folha === undefined || merged.valores.bruto_total_folha === null) {
+      merged.valores.bruto_total_folha = merged.valores.total_proventos || merged.valores.salario_bruto || 0;
+    }
+
     if (complements.empresa_nome !== undefined && complements.empresa_nome !== null) {
       merged.empresa.nome = complements.empresa_nome;
     }
@@ -565,7 +585,10 @@ export default function App() {
       );
     });
 
-    if (targetItem) {
+    const provHoras = merged.valores.provento_horas_trabalhadas;
+    if (provHoras && horas && horas > 0) {
+      ganho_por_hora_intermitente = provHoras / horas;
+    } else if (targetItem) {
       const qty = parseReferenceHours(targetItem.referencia);
       if (qty && qty > 0) {
         ganho_por_hora_intermitente = targetItem.valor / qty;

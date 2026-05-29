@@ -18,6 +18,26 @@ export default function AnalysisView({ currentAnalysis, onConfirm, onDiscard }: 
   const trabalhadorTipo = currentAnalysis.trabalhador?.tipo || "mensalista";
 
   const salBruto = currentAnalysis.valores?.salario_bruto || 0;
+  
+  let proventoHorasTrabalhadas = currentAnalysis.valores?.provento_horas_trabalhadas;
+  if (proventoHorasTrabalhadas === undefined || proventoHorasTrabalhadas === null) {
+    const targetItem = currentAnalysis.itens?.find((it: any) => {
+      if (it.tipo !== "provento") return false;
+      const name = (it.nome || "").toLowerCase();
+      return (
+        name === "horas trabalhadas" ||
+        name === "horas trabalhadas - interm" ||
+        name === "horas trabalhadas - interm." ||
+        name === "horas trabalhadas - intermitente" ||
+        name.includes("horas trab")
+      );
+    });
+    proventoHorasTrabalhadas = targetItem ? targetItem.valor : null;
+  }
+  const proventoHorasExibicao = proventoHorasTrabalhadas !== null ? proventoHorasTrabalhadas : salBruto;
+
+  const brutoTotalFolha = currentAnalysis.valores?.bruto_total_folha || currentAnalysis.valores?.total_proventos || salBruto;
+
   const salLiq = currentAnalysis.valores?.salario_liquido || 0;
   const totDescontos = currentAnalysis.valores?.total_descontos || 0;
   const totAdicionais = currentAnalysis.valores?.total_adicionais || 0;
@@ -271,18 +291,29 @@ export default function AnalysisView({ currentAnalysis, onConfirm, onDiscard }: 
         </div>
       </div>
 
-      {/* Main Financial Cards Grid (Bruto, Liquido, Descontos, Adicionais) */}
+      {/* Main Financial Cards Grid (Provento por Horas, Bruto Total da Folha, Liquido, Descontos, Adicionais) */}
       <h2 className="text-sm font-extrabold text-slate-400 uppercase tracking-wider block">Principais Resultados Financeiros</h2>
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 lg:grid-cols-5 md:grid-cols-3 gap-4">
         
-        {/* Salário Bruto */}
+        {/* Provento por Horas */}
         <div className="bg-white rounded-2xl p-5 border border-slate-100 flex flex-col justify-between h-32 shadow-xs">
           <div className="flex justify-between items-start">
-            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Salário Bruto</span>
+            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Provento por Horas</span>
+            <span className="material-symbols-outlined text-slate-400 text-[18px]">schedule</span>
+          </div>
+          <span className="text-xl font-black text-slate-900">
+            {formatBRL(proventoHorasExibicao)}
+          </span>
+        </div>
+
+        {/* Bruto Total da Folha */}
+        <div className="bg-white rounded-2xl p-5 border border-slate-100 flex flex-col justify-between h-32 shadow-xs">
+          <div className="flex justify-between items-start">
+            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Bruto Total da Folha</span>
             <span className="material-symbols-outlined text-slate-400 text-[18px]">payments</span>
           </div>
           <span className="text-xl font-black text-slate-900">
-            {formatBRL(salBruto)}
+            {formatBRL(brutoTotalFolha)}
           </span>
         </div>
 
@@ -292,8 +323,8 @@ export default function AnalysisView({ currentAnalysis, onConfirm, onDiscard }: 
             <span className="material-symbols-outlined text-[70px]">account_balance_wallet</span>
           </div>
           <div className="flex justify-between items-start">
-            <span className="text-[10px] font-bold text-emerald-200 uppercase tracking-wider">Salário Líquido</span>
-            <span className="material-symbols-outlined text-emerald-200 text-[18px]">account_balance_wallet</span>
+            <span className="text-[10px] font-bold text-emerald-250 uppercase tracking-wider">Salário Líquido</span>
+            <span className="material-symbols-outlined text-emerald-250 text-[18px]">account_balance_wallet</span>
           </div>
           <span className="text-2xl font-black text-white">
             {formatBRL(salLiq)}
@@ -322,6 +353,16 @@ export default function AnalysisView({ currentAnalysis, onConfirm, onDiscard }: 
           </span>
         </div>
 
+      </div>
+
+      {/* Explanation Banner for Proventos */}
+      <div className="bg-slate-50 border border-slate-100/80 rounded-2xl p-4 flex gap-3 text-left w-full mt-2">
+        <span className="material-symbols-outlined text-slate-500 select-none text-xl">info</span>
+        <div>
+          <p className="text-xs text-slate-600 leading-relaxed font-semibold">
+            Provento por horas representa apenas o valor pago pelas horas trabalhadas. Bruto total da folha representa todos os proventos somados, incluindo DSR, adicionais, férias, 13º proporcional e ajuda de custo, quando existirem.
+          </p>
+        </div>
       </div>
 
       {/* NEW CALCULATED CARDS FOR COMPLEMENT VALUES */}

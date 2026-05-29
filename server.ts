@@ -345,8 +345,12 @@ function validateAndHealAnalysis(data: any): any {
     vale_transporte_valor: null,
     seguro_vida_valor: null,
     saldo_devedor_valor: null,
-    adiantamento_valor: null
+    adiantamento_valor: null,
+    provento_horas_trabalhadas: null,
+    bruto_total_folha: null
   };
+  if (data.valores.provento_horas_trabalhadas === undefined) data.valores.provento_horas_trabalhadas = null;
+  if (data.valores.bruto_total_folha === undefined) data.valores.bruto_total_folha = null;
   if (!data.trabalho) data.trabalho = {
     dias_trabalhados: null,
     horas_trabalhadas: null,
@@ -365,7 +369,7 @@ function validateAndHealAnalysis(data: any): any {
     'inss', 'fgts', 'horas_extras_valor', 'adicional_noturno_valor', 'bonus',
     'dsr_valor', 'ferias_valor', 'terco_ferias_valor', 
     'decimo_terceiro_valor', 'vale_transporte_valor', 'seguro_vida_valor', 
-    'saldo_devedor_valor', 'adiantamento_valor'
+    'saldo_devedor_valor', 'adiantamento_valor', 'provento_horas_trabalhadas', 'bruto_total_folha'
   ];
   valKeys.forEach(k => {
     if (data.valores[k] !== undefined && data.valores[k] !== null) {
@@ -474,10 +478,29 @@ function validateAndHealAnalysis(data: any): any {
         data.trabalho.horas_trabalhadas = refNum;
       }
     }
+    if (isProvento && (
+      name === "horas trabalhadas" ||
+      name === "horas trabalhadas - interm" ||
+      name === "horas trabalhadas - interm." ||
+      name === "horas trabalhadas - intermitente" ||
+      name.includes("horas trab")
+    )) {
+      if (data.valores.provento_horas_trabalhadas === null) {
+        data.valores.provento_horas_trabalhadas = it.valor;
+      }
+    }
+    if (name.includes("totais") || name === "totais" || name.includes("total de proventos") || name.includes("total proventos") || (name.includes("total") && isProvento && name.includes("provento"))) {
+      if (data.valores.bruto_total_folha === null) {
+        data.valores.bruto_total_folha = it.valor;
+      }
+    }
   });
 
   if (data.valores.total_proventos === null || data.valores.total_proventos === 0) {
     data.valores.total_proventos = Number(extraProventosSum.toFixed(2));
+  }
+  if (data.valores.bruto_total_folha === null || data.valores.bruto_total_folha === 0) {
+    data.valores.bruto_total_folha = data.valores.total_proventos;
   }
   if (data.valores.total_descontos === null || data.valores.total_descontos === 0) {
     data.valores.total_descontos = Number(extraDescontosSum.toFixed(2));
@@ -717,7 +740,9 @@ app.post('/api/analisar-contracheque', async (req, res) => {
           vale_transporte_valor: { type: Type.NUMBER, description: "Valor descontado referente a vale transporte" },
           seguro_vida_valor: { type: Type.NUMBER, description: "Valor descontado referente a seguro de vida" },
           saldo_devedor_valor: { type: Type.NUMBER, description: "Valor descontado de saldo devedor ou insuficiência de saldo anterior" },
-          adiantamento_valor: { type: Type.NUMBER, description: "Valor de desconto de adiantamento salarial" }
+          adiantamento_valor: { type: Type.NUMBER, description: "Valor de desconto de adiantamento salarial" },
+          provento_horas_trabalhadas: { type: Type.NUMBER, description: "Valor total do provento referente apenas às horas normais trabalhadas" },
+          bruto_total_folha: { type: Type.NUMBER, description: "Bruto total da folha antes de descontos. Geralmente vem da linha de totais de proventos" }
         }
       },
       trabalho: {
@@ -857,8 +882,8 @@ REGRAS CRÍTICAS DE EXTRAÇÃO:
       let lastError: any = null;
       let success = false;
       let response: any = null;
-      const GEMINI_MODELS = ["gemini-2.5-flash", "gemini-2.0-flash"];
-      const maxRetries = 3;
+      const GEMINI_MODELS = ["gemini-3.5-flash", "gemini-2.5-flash", "gemini-3.1-flash-lite"];
+      const maxRetries = 5;
       let modelIndex = 0;
       let attempt = 1;
 
@@ -912,14 +937,10 @@ REGRAS CRÍTICAS DE EXTRAÇÃO:
           // Check for 404 Model Not Found
           const is404 = err?.status === 404 || err?.statusCode === 404 || errorMsg.includes("not found") || errorMsg.includes("404");
           if (is404) {
-            if (modelIndex === 0) {
-              console.log(`[Contracheque AI Server] Modelo ${selectedModel} não encontrado (404). Trocando imediatamente para o modelo reserva ${GEMINI_MODELS[1]}`);
-              modelIndex = 1;
-              attempt++;
-              continue;
-            } else {
-              break;
-            }
+            console.log(`[Contracheque AI Server] Modelo ${selectedModel} não encontrado (404). Rotacionando para o próximo modelo reserva...`);
+            modelIndex = (modelIndex + 1) % GEMINI_MODELS.length;
+            attempt++;
+            continue;
           }
 
           const isTransient = 
@@ -935,7 +956,7 @@ REGRAS CRÍTICAS DE EXTRAÇÃO:
             errorMsg.includes("rate limit") || 
             errorMsg.includes("exhausted");
 
-          let waitTimeMs = (attempt === 1) ? 2000 : 5000;
+          let waitTimeMs = (attempt === 1) ? 2000 : 4000;
           
           const secondsMatch = errorMsg.match(/please retry in ([\d\.]+)s/);
           if (secondsMatch && secondsMatch[1]) {
@@ -954,12 +975,11 @@ REGRAS CRÍTICAS DE EXTRAÇÃO:
           }
 
           if (isTransient && attempt < maxRetries) {
-            console.log(`[Contracheque AI Server] Erro transiente detectado (Tentativa ${attempt}). Aguardando ${waitTimeMs}ms...`);
+            console.log(`[Contracheque AI Server] Erro transiente detectado (Tentativa ${attempt}). Aguardando ${waitTimeMs}ms antes de tentar próximo modelo...`);
             await new Promise(resolve => setTimeout(resolve, waitTimeMs));
             
-            if (attempt === 2 && modelIndex === 0) {
-              modelIndex = 1;
-            }
+            // Switch model on every retry to maximize chances of hitting a free model that is online
+            modelIndex = (modelIndex + 1) % GEMINI_MODELS.length;
             attempt++;
           } else {
             break;

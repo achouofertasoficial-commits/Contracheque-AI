@@ -34,6 +34,8 @@ export interface Valores {
   seguro_vida_valor?: number | null;
   saldo_devedor_valor?: number | null;
   adiantamento_valor?: number | null;
+  provento_horas_trabalhadas?: number | null;
+  bruto_total_folha?: number | null;
 }
 
 export interface Trabalho {
