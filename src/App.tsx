@@ -380,6 +380,15 @@ export default function App() {
 
   const handleAnalysisComplete = (extractedResult: any) => {
     setIsLoading(false);
+    if (!extractedResult) {
+      if (user) {
+        setCurrentScreen('dashboard');
+      } else {
+        setCurrentScreen('welcome');
+      }
+      return;
+    }
+
     if (extractedResult) {
       const validacao = extractedResult.validacao_multipla;
       

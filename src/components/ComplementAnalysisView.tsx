@@ -11,6 +11,24 @@ interface ComplementAnalysisViewProps {
 export default function ComplementAnalysisView({ currentAnalysis, onConfirm, onDiscard }: ComplementAnalysisViewProps) {
   if (!currentAnalysis) return null;
 
+  const parsedSalarioLiquido = currentAnalysis?.valores?.salario_liquido;
+  const isSalarioLiquidoExtracted = parsedSalarioLiquido !== null && parsedSalarioLiquido !== undefined && parsedSalarioLiquido > 0;
+
+  const parsedHorasNoturnas = currentAnalysis?.trabalho?.horas_noturnas;
+  const isHorasNoturnasExtracted = parsedHorasNoturnas !== null && parsedHorasNoturnas !== undefined && parsedHorasNoturnas > 0;
+
+  const parsedHorasDsr = currentAnalysis?.trabalho?.horas_dsr_intermitente;
+  const isHorasDsrExtracted = parsedHorasDsr !== null && parsedHorasDsr !== undefined && parsedHorasDsr > 0;
+
+  const parsedHorasTrabalhadas = currentAnalysis?.trabalho?.horas_trabalhadas;
+  const isHorasTrabalhadasExtracted = parsedHorasTrabalhadas !== null && parsedHorasTrabalhadas !== undefined && parsedHorasTrabalhadas > 0;
+
+  const parsedHorasExtras = currentAnalysis?.trabalho?.horas_extras;
+  const isHorasExtrasExtracted = parsedHorasExtras !== null && parsedHorasExtras !== undefined && parsedHorasExtras > 0;
+
+  const parsedEmpresaNome = currentAnalysis?.empresa?.nome;
+  const isEmpresaNomeExtracted = parsedEmpresaNome !== null && parsedEmpresaNome !== undefined && parsedEmpresaNome.trim().length > 0;
+
   // Pre-populate with values extracted by AI so the user can easily confirm them
   const [complements, setComplements] = useState<Required<ComplementaryAnalysisData>>({
     dias_trabalhados: currentAnalysis.trabalho?.dias_trabalhados ?? null,
@@ -87,14 +105,14 @@ export default function ComplementAnalysisView({ currentAnalysis, onConfirm, onD
 
     const data: ComplementaryAnalysisData = {
       dias_trabalhados: isNaN(Number(parsedDias)) ? null : parsedDias,
-      horas_trabalhadas: isNaN(Number(parsedHoras)) ? null : parsedHoras,
-      horas_extras: isNaN(Number(parsedExtras)) ? null : parsedExtras,
-      horas_noturnas: isNaN(Number(parsedNoturnas)) ? null : parsedNoturnas,
-      salario_liquido_recebido: parsedSalLiq,
-      empresa_nome: empresaText.trim() || null,
+      horas_trabalhadas: isHorasTrabalhadasExtracted ? parsedHorasTrabalhadas : (isNaN(Number(parsedHoras)) ? null : parsedHoras),
+      horas_extras: isHorasExtrasExtracted ? parsedHorasExtras : (isNaN(Number(parsedExtras)) ? null : parsedExtras),
+      horas_noturnas: isHorasNoturnasExtracted ? parsedHorasNoturnas : (isNaN(Number(parsedNoturnas)) ? null : parsedNoturnas),
+      salario_liquido_recebido: isSalarioLiquidoExtracted ? parsedSalarioLiquido : parsedSalLiq,
+      empresa_nome: isEmpresaNomeExtracted ? parsedEmpresaNome : (empresaText.trim() || null),
       tipo_trabalhador: tipoTrab || null,
       observacoes: obsText.trim() || null,
-      horas_dsr_intermitente: isNaN(Number(parsedDsr)) ? null : parsedDsr
+      horas_dsr_intermitente: isHorasDsrExtracted ? parsedHorasDsr : (isNaN(Number(parsedDsr)) ? null : parsedDsr)
     };
 
     onConfirm(data);
@@ -163,121 +181,229 @@ export default function ComplementAnalysisView({ currentAnalysis, onConfirm, onD
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             
             {/* Liquid Salary received */}
-            <div className="flex flex-col gap-1.5">
-              <label className="text-[11px] font-bold text-slate-700 flex items-center gap-1">
-                <span className="material-symbols-outlined text-[16px] text-emerald-800">payments</span>
-                Valor líquido realmente recebido
-              </label>
-              <input
-                type="text"
-                placeholder="Ex: R$ 2.779,25"
-                value={salLiqText}
-                onChange={(e) => setSalLiqText(e.target.value)}
-                className="bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2.5 text-xs font-semibold text-slate-800 focus:outline-none focus:border-emerald-600 focus:ring-1 focus:ring-emerald-600 transition-all"
-              />
-              <span className="text-[9px] text-slate-400">
-                Seu salário líquido final que cai na conta bancária.
-              </span>
-            </div>
-
-            {/* Total Hours worked in month */}
-            <div className="flex flex-col gap-1.5">
-              <label className="text-[11px] font-bold text-slate-700 flex items-center gap-1">
-                <span className="material-symbols-outlined text-[16px] text-slate-500">schedule</span>
-                Horas trabalhadas no mês
-              </label>
-              <input
-                type="text"
-                placeholder="Ex: 176"
-                value={horasText}
-                onChange={(e) => setHorasText(e.target.value)}
-                className="bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2.5 text-xs font-semibold text-slate-800 focus:outline-none focus:border-emerald-600 focus:ring-1 focus:ring-emerald-600 transition-all"
-              />
-              <span className="text-[9px] text-slate-400">
-                Carga horária total (ex: 176 horas ou 220 horas).
-              </span>
-              <DecimalHoursHint />
-            </div>
-
-            {/* Extra Hours Quantity */}
-            <div className="flex flex-col gap-1.5">
-              <label className="text-[11px] font-bold text-slate-700 flex items-center gap-1">
-                <span className="material-symbols-outlined text-[16px] text-amber-500 font-bold">add_time</span>
-                Horas extras realizadas
-              </label>
-              <input
-                type="text"
-                placeholder="Ex: 12"
-                value={extrasText}
-                onChange={(e) => setExtrasText(e.target.value)}
-                className="bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2.5 text-xs font-semibold text-slate-800 focus:outline-none focus:border-emerald-600 focus:ring-1 focus:ring-emerald-600 transition-all"
-              />
-              <span className="text-[9px] text-slate-400">
-                Soma da quantidade de horas extras trabalhadas no mês.
-              </span>
-              <DecimalHoursHint />
-            </div>
-
-            {/* Night shift hours Quantity */}
-            <div className="flex flex-col gap-1.5">
-              <label className="text-[11px] font-bold text-slate-700 flex items-center gap-1">
-                <span className="material-symbols-outlined text-[16px] text-slate-800">dark_mode</span>
-                Horas de adicional noturno realizadas
-              </label>
-              <input
-                type="text"
-                placeholder="Ex: 35"
-                value={noturnasText}
-                onChange={(e) => setNoturnasText(e.target.value)}
-                className="bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2.5 text-xs font-semibold text-slate-800 focus:outline-none focus:border-emerald-600 focus:ring-1 focus:ring-emerald-600 transition-all"
-              />
-              <span className="text-[9px] text-slate-400">
-                Muitos holerites mostram apenas o valor, declare as horas se souber!
-              </span>
-              <DecimalHoursHint />
-            </div>
-
-            {/* DSR Intermitente Hours */}
-            {showDsrField && (
-              <div className="flex flex-col gap-1.5">
+            {isSalarioLiquidoExtracted ? (
+              <div className="flex flex-col gap-1.5 bg-emerald-50/40 border border-emerald-100 rounded-2xl p-4 text-left relative shadow-[0_1px_2px_rgba(0,0,0,0.02)]">
+                <span className="absolute top-3.5 right-3.5 px-2 py-0.5 rounded-full text-[9px] font-bold bg-emerald-100/80 text-emerald-800 flex items-center gap-0.5 select-none">
+                  <span className="material-symbols-outlined text-[10px] font-bold">check_circle</span> Confirmado por IA
+                </span>
+                <label className="text-[11px] font-bold text-slate-500 flex items-center gap-1">
+                  <span className="material-symbols-outlined text-[16px] text-emerald-800">payments</span>
+                  Valor líquido extraído
+                </label>
+                <div className="text-sm font-extrabold text-slate-900 mt-1">
+                  {parsedSalarioLiquido.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                </div>
+                <span className="text-[9px] text-emerald-700 font-medium">
+                  Salário líquido final extraído com precisão do holerite.
+                </span>
+              </div>
+            ) : (
+              <div className="flex flex-col gap-1.5 bg-slate-50 border border-slate-200/60 rounded-2xl p-4 text-left">
                 <label className="text-[11px] font-bold text-slate-700 flex items-center gap-1">
-                  <span className="material-symbols-outlined text-[16px] text-indigo-500">beach_access</span>
-                  Horas de DSR Intermitente
+                  <span className="material-symbols-outlined text-[16px] text-emerald-800">payments</span>
+                  Valor líquido recebido
                 </label>
                 <input
                   type="text"
-                  placeholder="Ex: 12,50"
-                  value={dsrText}
-                  onChange={(e) => setDsrText(e.target.value)}
-                  className="bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2.5 text-xs font-semibold text-slate-800 focus:outline-none focus:border-emerald-600 focus:ring-1 focus:ring-emerald-600 transition-all"
+                  placeholder="Ex: R$ 2.779,25"
+                  value={salLiqText}
+                  onChange={(e) => setSalLiqText(e.target.value)}
+                  className="bg-white border border-slate-200 rounded-xl px-3 py-2 text-xs font-semibold text-slate-800 focus:outline-none focus:border-emerald-600 focus:ring-1 focus:ring-emerald-600 transition-all mt-1"
                 />
                 <span className="text-[9px] text-slate-400">
-                  Horas referentes ao Descanso Semanal Remunerado.
+                  Insira o salário líquido final que cairá na sua conta.
+                </span>
+              </div>
+            )}
+
+            {/* Total Hours worked in month */}
+            {isHorasTrabalhadasExtracted ? (
+              <div className="flex flex-col gap-1.5 bg-slate-50 border border-slate-100 rounded-2xl p-4 text-left relative shadow-[0_1px_2px_rgba(0,0,0,0.02)]">
+                <span className="absolute top-3.5 right-3.5 px-2 py-0.5 rounded-full text-[9px] font-bold bg-slate-200/60 text-slate-600 flex items-center gap-0.5 select-none">
+                  <span className="material-symbols-outlined text-[10px] font-bold">check_circle</span> Confirmado por IA
+                </span>
+                <label className="text-[11px] font-bold text-slate-500 flex items-center gap-1">
+                  <span className="material-symbols-outlined text-[16px] text-slate-500">schedule</span>
+                  Horas trabalhadas
+                </label>
+                <div className="text-sm font-extrabold text-slate-800 mt-1">
+                  {parsedHorasTrabalhadas} horas
+                </div>
+                <span className="text-[9px] text-slate-500 font-medium">
+                  Carga horária mensal extraída com as devidas referências.
+                </span>
+              </div>
+            ) : (
+              <div className="flex flex-col gap-1.5 bg-slate-50 border border-slate-200/60 rounded-2xl p-4 text-left">
+                <label className="text-[11px] font-bold text-slate-700 flex items-center gap-1">
+                  <span className="material-symbols-outlined text-[16px] text-slate-500">schedule</span>
+                  Horas trabalhadas no mês
+                </label>
+                <input
+                  type="text"
+                  placeholder="Ex: 176"
+                  value={horasText}
+                  onChange={(e) => setHorasText(e.target.value)}
+                  className="bg-white border border-slate-200 rounded-xl px-3 py-2 text-xs font-semibold text-slate-800 focus:outline-none focus:border-emerald-600 focus:ring-1 focus:ring-emerald-600 transition-all mt-1"
+                />
+                <span className="text-[9px] text-slate-400">
+                  Carga horária total (ex: 176 horas ou 220 horas).
                 </span>
                 <DecimalHoursHint />
               </div>
             )}
 
+            {/* Extra Hours Quantity */}
+            {isHorasExtrasExtracted ? (
+              <div className="flex flex-col gap-1.5 bg-slate-50 border border-slate-100 rounded-2xl p-4 text-left relative shadow-[0_1px_2px_rgba(0,0,0,0.02)]">
+                <span className="absolute top-3.5 right-3.5 px-2 py-0.5 rounded-full text-[9px] font-bold bg-slate-200/60 text-slate-600 flex items-center gap-0.5 select-none">
+                  <span className="material-symbols-outlined text-[10px] font-bold">check_circle</span> Confirmado por IA
+                </span>
+                <label className="text-[11px] font-bold text-slate-500 flex items-center gap-1">
+                  <span className="material-symbols-outlined text-[16px] text-amber-500 font-bold">add_time</span>
+                  Horas extras realizadas
+                </label>
+                <div className="text-sm font-extrabold text-slate-800 mt-1">
+                  {parsedHorasExtras} horas
+                </div>
+                <span className="text-[9px] text-slate-500 font-medium">
+                  Soma da quantidade de horas extras extraída do holerite.
+                </span>
+              </div>
+            ) : (
+              <div className="flex flex-col gap-1.5 bg-slate-50 border border-slate-200/60 rounded-2xl p-4 text-left">
+                <label className="text-[11px] font-bold text-slate-700 flex items-center gap-1">
+                  <span className="material-symbols-outlined text-[16px] text-amber-500 font-bold">add_time</span>
+                  Horas extras realizadas
+                </label>
+                <input
+                  type="text"
+                  placeholder="Ex: 12"
+                  value={extrasText}
+                  onChange={(e) => setExtrasText(e.target.value)}
+                  className="bg-white border border-slate-200 rounded-xl px-3 py-2 text-xs font-semibold text-slate-800 focus:outline-none focus:border-emerald-600 focus:ring-1 focus:ring-emerald-600 transition-all mt-1"
+                />
+                <span className="text-[9px] text-slate-400">
+                  Soma da quantidade de horas extras trabalhadas no mês.
+                </span>
+                <DecimalHoursHint />
+              </div>
+            )}
+
+            {/* Night shift hours Quantity */}
+            {isHorasNoturnasExtracted ? (
+              <div className="flex flex-col gap-1.5 bg-slate-50 border border-slate-100 rounded-2xl p-4 text-left relative shadow-[0_1px_2px_rgba(0,0,0,0.02)]">
+                <span className="absolute top-3.5 right-3.5 px-2 py-0.5 rounded-full text-[9px] font-bold bg-slate-200/60 text-slate-600 flex items-center gap-0.5 select-none">
+                  <span className="material-symbols-outlined text-[10px] font-bold">check_circle</span> Confirmado por IA
+                </span>
+                <label className="text-[11px] font-bold text-slate-500 flex items-center gap-1">
+                  <span className="material-symbols-outlined text-[16px] text-slate-800">dark_mode</span>
+                  Horas noturnas realizadas
+                </label>
+                <div className="text-sm font-extrabold text-slate-800 mt-1">
+                  {parsedHorasNoturnas} horas
+                </div>
+                <span className="text-[9px] text-slate-500 font-medium">
+                  Quantidade total extraída de adicional noturno do holerite.
+                </span>
+              </div>
+            ) : (
+              <div className="flex flex-col gap-1.5 bg-slate-50 border border-slate-200/60 rounded-2xl p-4 text-left">
+                <label className="text-[11px] font-bold text-slate-700 flex items-center gap-1">
+                  <span className="material-symbols-outlined text-[16px] text-slate-800">dark_mode</span>
+                  Horas de adicional noturno realizadas
+                </label>
+                <input
+                  type="text"
+                  placeholder="Ex: 35"
+                  value={noturnasText}
+                  onChange={(e) => setNoturnasText(e.target.value)}
+                  className="bg-white border border-slate-200 rounded-xl px-3 py-2 text-xs font-semibold text-slate-800 focus:outline-none focus:border-emerald-600 focus:ring-1 focus:ring-emerald-600 transition-all mt-1"
+                />
+                <span className="text-[9px] text-slate-400">
+                  Muitos holerites mostram apenas o valor, declare as horas se souber!
+                </span>
+                <DecimalHoursHint />
+              </div>
+            )}
+
+            {/* DSR Intermitente Hours */}
+            {showDsrField && (
+              isHorasDsrExtracted ? (
+                <div className="flex flex-col gap-1.5 bg-slate-50 border border-slate-100 rounded-2xl p-4 text-left relative shadow-[0_1px_2px_rgba(0,0,0,0.02)]">
+                  <span className="absolute top-3.5 right-3.5 px-2 py-0.5 rounded-full text-[9px] font-bold bg-slate-200/60 text-slate-600 flex items-center gap-0.5 select-none">
+                    <span className="material-symbols-outlined text-[10px] font-bold">check_circle</span> Confirmado por IA
+                  </span>
+                  <label className="text-[11px] font-bold text-slate-500 flex items-center gap-1">
+                    <span className="material-symbols-outlined text-[16px] text-indigo-500">beach_access</span>
+                    Horas de DSR Intermitente
+                  </label>
+                  <div className="text-sm font-extrabold text-slate-800 mt-1">
+                    {parsedHorasDsr} horas
+                  </div>
+                  <span className="text-[9px] text-slate-500 font-medium">
+                    Descanso Semanal Remunerado identificado nas rubricas da IA.
+                  </span>
+                </div>
+              ) : (
+                <div className="flex flex-col gap-1.5 bg-slate-50 border border-slate-200/60 rounded-2xl p-4 text-left">
+                  <label className="text-[11px] font-bold text-slate-700 flex items-center gap-1">
+                    <span className="material-symbols-outlined text-[16px] text-indigo-500">beach_access</span>
+                    Horas de DSR Intermitente
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="Ex: 12,50"
+                    value={dsrText}
+                    onChange={(e) => setDsrText(e.target.value)}
+                    className="bg-white border border-slate-200 rounded-xl px-3 py-2 text-xs font-semibold text-slate-800 focus:outline-none focus:border-emerald-600 focus:ring-1 focus:ring-emerald-600 transition-all mt-1"
+                  />
+                  <span className="text-[9px] text-slate-400">
+                    Horas de Descanso Semanal Remunerado do período contratado.
+                  </span>
+                  <DecimalHoursHint />
+                </div>
+              )
+            )}
+
             {/* Company name */}
-            <div className="flex flex-col gap-1.5">
-              <label className="text-[11px] font-bold text-slate-700 flex items-center gap-1">
-                <span className="material-symbols-outlined text-[16px] text-slate-500">domain</span>
-                Nome da empresa
-              </label>
-              <input
-                type="text"
-                placeholder="Aparece no cabeçalho"
-                value={empresaText}
-                onChange={(e) => setEmpresaText(e.target.value)}
-                className="bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2.5 text-xs font-semibold text-slate-800 focus:outline-none focus:border-emerald-600 focus:ring-1 focus:ring-emerald-600 transition-all"
-              />
-              <span className="text-[9px] text-slate-400">
-                Razão social ou nome fantasia do empregador.
-              </span>
-            </div>
+            {isEmpresaNomeExtracted ? (
+              <div className="flex flex-col gap-1.5 bg-slate-50 border border-slate-100 rounded-2xl p-4 text-left relative shadow-[0_1px_2px_rgba(0,0,0,0.02)]">
+                <span className="absolute top-3.5 right-3.5 px-2 py-0.5 rounded-full text-[9px] font-bold bg-slate-200/60 text-slate-600 flex items-center gap-0.5 select-none">
+                  <span className="material-symbols-outlined text-[10px] font-bold">check_circle</span> Confirmado por IA
+                </span>
+                <label className="text-[11px] font-bold text-slate-500 flex items-center gap-1">
+                  <span className="material-symbols-outlined text-[16px] text-slate-500">domain</span>
+                  Nome da empresa
+                </label>
+                <div className="text-sm font-extrabold text-slate-800 mt-1 truncate">
+                  {parsedEmpresaNome}
+                </div>
+                <span className="text-[9px] text-slate-500 font-medium">
+                  CNPJ/Nome de fonte pagadora identificado pelo extrator de layout.
+                </span>
+              </div>
+            ) : (
+              <div className="flex flex-col gap-1.5 bg-slate-50 border border-slate-200/60 rounded-2xl p-4 text-left">
+                <label className="text-[11px] font-bold text-slate-700 flex items-center gap-1">
+                  <span className="material-symbols-outlined text-[16px] text-slate-500">domain</span>
+                  Nome da empresa
+                </label>
+                <input
+                  type="text"
+                  placeholder="Aparece no cabeçalho"
+                  value={empresaText}
+                  onChange={(e) => setEmpresaText(e.target.value)}
+                  className="bg-white border border-slate-200 rounded-xl px-3 py-2 text-xs font-semibold text-slate-800 focus:outline-none focus:border-emerald-600 focus:ring-1 focus:ring-emerald-600 transition-all mt-1"
+                />
+                <span className="text-[9px] text-slate-400">
+                  Razão social ou nome fantasia do empregador.
+                </span>
+              </div>
+            )}
 
             {/* Worker Type */}
-            <div className="flex flex-col gap-1.5">
+            <div className="flex flex-col gap-1.5 bg-slate-50 border border-slate-200/60 rounded-2xl p-4 text-left">
               <label className="text-[11px] font-bold text-slate-700 flex items-center gap-1">
                 <span className="material-symbols-outlined text-[16px] text-slate-500">work</span>
                 Regime do trabalhador
@@ -285,13 +411,13 @@ export default function ComplementAnalysisView({ currentAnalysis, onConfirm, onD
               <select
                 value={tipoTrab}
                 onChange={(e) => setTipoTrab(e.target.value as any)}
-                className="bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2.5 text-xs font-semibold text-slate-800 focus:outline-none focus:border-emerald-600 focus:ring-1 focus:ring-emerald-600 transition-all"
+                className="bg-white border border-slate-200 rounded-xl px-3 py-2 text-xs font-semibold text-slate-800 focus:outline-none focus:border-emerald-600 focus:ring-1 focus:ring-emerald-600 transition-all mt-1"
               >
                 <option value="mensalista">Mensalista CLT (Fixo Mensal)</option>
                 <option value="intermitente">Intermitente CLT (Por Período/Hora)</option>
               </select>
               <span className="text-[9px] text-slate-400">
-                O regime define a base de proventos futuros.
+                O regime define a base de proventos e férias futuras.
               </span>
             </div>
 

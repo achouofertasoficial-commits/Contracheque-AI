@@ -19,8 +19,10 @@ export default function UploadView({ onAnalysisComplete, isLoading, setIsLoading
   }[]>([]);
   const [loadingStatus, setLoadingStatus] = useState("Lendo layout do documento...");
   const [dragActive, setDragActive] = useState(false);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   const simulateFileSelect = (mockType: 'joao' | 'ana') => {
+    setErrorMessage(null);
     const filename = mockType === 'joao' 
       ? 'contracheque_joao_silva_clt.pdf' 
       : 'contracheque_ana_silva_intermitente.pdf';
@@ -39,6 +41,7 @@ export default function UploadView({ onAnalysisComplete, isLoading, setIsLoading
   };
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setErrorMessage(null);
     if (e.target.files && e.target.files.length > 0) {
       (Array.from(e.target.files) as File[]).forEach(file => {
         const reader = new FileReader();
@@ -100,6 +103,46 @@ export default function UploadView({ onAnalysisComplete, isLoading, setIsLoading
     setSelectedFiles(prev => prev.filter((_, i) => i !== index));
   };
 
+  const handleFillManually = () => {
+    const manualTemplate = {
+      trabalhador: {
+        nome: "Trabalhador",
+        tipo: "mensalista"
+      },
+      empresa: {
+        nome: "",
+        cnpj: ""
+      },
+      competencia: {
+        mes: "Maio",
+        ano: "2026",
+        data_credito: "",
+        tipo_processamento: "Mensal"
+      },
+      valores: {
+        salario_bruto: 0,
+        salario_liquido: 0,
+        total_descontos: 0,
+        total_proventos: 0,
+        total_adicionais: 0,
+        inss: 0,
+        fgts: 0
+      },
+      trabalho: {
+        dias_trabalhados: null,
+        horas_trabalhadas: null,
+        horas_extras: null,
+        horas_noturnas: null,
+        horas_dsr_intermitente: null
+      },
+      itens: [],
+      alertas: [],
+      resumo_ia: "Você optou por preencher o seu contracheque de forma manual. Insira os dados do seu holerite nos campos indicados acima para prosseguir.",
+      campos_ausentes: []
+    };
+    onAnalysisComplete(manualTemplate);
+  };
+
   const triggerUploadInput = () => {
     const fileInput = document.getElementById('file-upload-input');
     if (fileInput) {
@@ -111,6 +154,7 @@ export default function UploadView({ onAnalysisComplete, isLoading, setIsLoading
     if (selectedFiles.length === 0) return;
     
     setIsLoading(true);
+    setErrorMessage(null);
 
     const statuses = [
       "Processando imagem/PDF do documento...",
@@ -139,9 +183,16 @@ export default function UploadView({ onAnalysisComplete, isLoading, setIsLoading
       });
 
       const extractedJson = await response.json();
+      clearInterval(statusInterval);
+
+      if (!response.ok || extractedJson.error) {
+        const msg = extractedJson.error || "Não foi possível extrair os dados deste contracheque. Tente enviar uma imagem/PDF mais nítido.";
+        setErrorMessage(msg);
+        setIsLoading(false);
+        return;
+      }
       
       // Let status show "Concluído!" briefly
-      clearInterval(statusInterval);
       setLoadingStatus("Tudo pronto! Redirecionando...");
       await new Promise(resolve => setTimeout(resolve, 800));
 
@@ -150,6 +201,7 @@ export default function UploadView({ onAnalysisComplete, isLoading, setIsLoading
     } catch (err) {
       console.error(err);
       clearInterval(statusInterval);
+      setErrorMessage("Não foi possível extrair os dados deste contracheque. Tente enviar uma imagem/PDF mais nítido.");
       setIsLoading(false);
     }
   };
@@ -204,6 +256,32 @@ export default function UploadView({ onAnalysisComplete, isLoading, setIsLoading
         <h1 className="text-2xl font-bold text-slate-900">Enviar Contracheque</h1>
         <p className="text-sm text-slate-500 mt-1">Insira os holerites do mês atual para análise consolidada.</p>
       </div>
+
+      {/* Error Message Box */}
+      {errorMessage && (
+        <div className="w-full flex flex-col gap-2.5 mb-4 animate-[fadeIn_0.2s_ease-out]">
+          <div className="bg-rose-50 border border-rose-200 rounded-xl p-4 flex gap-3 text-left shadow-sm">
+            <span className="material-symbols-outlined text-rose-700 select-none">error_outline</span>
+            <div className="flex-grow space-y-1">
+              <p className="text-xs text-rose-950 font-bold leading-relaxed">
+                {errorMessage}
+              </p>
+              <p className="text-[10px] text-slate-500 leading-normal">
+                O servidor de IA pode estar enfrentando alta demanda temporária. Se desejar, você pode continuar usando um dos perfis simuladores abaixo ou clicando no botão para preencher os dados do seu holerite manualmente.
+              </p>
+            </div>
+          </div>
+          
+          <button
+            type="button"
+            onClick={handleFillManually}
+            className="w-full bg-white hover:bg-slate-50 border border-slate-200 text-slate-800 font-bold text-xs py-3 rounded-xl flex items-center justify-center gap-1.5 shadow-xs transition-all active:scale-[0.99]"
+          >
+            <span className="material-symbols-outlined text-[16px]">edit_document</span>
+            Prosseguir Sem IA (Preencher Manualmente)
+          </button>
+        </div>
+      )}
 
       {/* Warning Tip */}
       <div className="w-full bg-blue-50 border border-blue-100 rounded-xl p-4 flex gap-3 text-left mb-4 shadow-xs">

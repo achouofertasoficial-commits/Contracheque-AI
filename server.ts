@@ -252,7 +252,9 @@ app.post('/api/analisar-contracheque', async (req, res) => {
         type: Type.OBJECT,
         properties: {
           mes: { type: Type.STRING, description: "Mês por extenso, ej: Outubro" },
-          ano: { type: Type.STRING }
+          ano: { type: Type.STRING },
+          data_credito: { type: Type.STRING, description: "Data de crédito ou pagamento no formato DD/MM/AAAA se estiver visível" },
+          tipo_processamento: { type: Type.STRING, description: "Tipo de processamento, ex: Mensal, Adiantamento, Férias, 13º Salário" }
         }
       },
       valores: {
@@ -266,7 +268,16 @@ app.post('/api/analisar-contracheque', async (req, res) => {
           fgts: { type: Type.NUMBER },
           horas_extras_valor: { type: Type.NUMBER },
           adicional_noturno_valor: { type: Type.NUMBER },
-          bonus: { type: Type.NUMBER }
+          bonus: { type: Type.NUMBER },
+          total_proventos: { type: Type.NUMBER, description: "Cálculo ou soma total de todos os proventos/valores positivos" },
+          dsr_valor: { type: Type.NUMBER, description: "Valor recebido referente a Descanso Semanal Remunerado (DSR)" },
+          ferias_valor: { type: Type.NUMBER, description: "Valor de pagamento de férias" },
+          terco_ferias_valor: { type: Type.NUMBER, description: "Valor adicional de 1/3 de férias" },
+          decimo_terceiro_valor: { type: Type.NUMBER, description: "Valor recebido referente a 13º salário" },
+          vale_transporte_valor: { type: Type.NUMBER, description: "Valor descontado referente a vale transporte" },
+          seguro_vida_valor: { type: Type.NUMBER, description: "Valor descontado referente a seguro de vida" },
+          saldo_devedor_valor: { type: Type.NUMBER, description: "Valor descontado de saldo devedor ou insuficiência de saldo anterior" },
+          adiantamento_valor: { type: Type.NUMBER, description: "Valor de desconto de adiantamento salarial" }
         }
       },
       trabalho: {
@@ -276,6 +287,7 @@ app.post('/api/analisar-contracheque', async (req, res) => {
           horas_trabalhadas: { type: Type.NUMBER },
           horas_extras: { type: Type.NUMBER },
           horas_noturnas: { type: Type.NUMBER },
+          horas_dsr_intermitente: { type: Type.NUMBER },
           media_por_dia: { type: Type.NUMBER },
           media_por_hora: { type: Type.NUMBER }
         }
@@ -326,20 +338,48 @@ app.post('/api/analisar-contracheque', async (req, res) => {
     required: ["trabalhador", "empresa", "competencia", "valores", "trabalho", "itens", "alertas", "resumo_ia"]
   };
 
-  const modelPrompt = `Analise este arquivo de contracheque (pode ser imagem ou PDF) e extraia todas as informações financeiras.
+  const modelPrompt = `Analise este arquivo de contracheque (pode ser imagem ou PDF) e extraia todas as informações financeiras reais contidas nele.
 Retorne um objeto JSON estritamente compatível com o seguinte de acordo com o padrão CLT brasileiro:
-- trabalhador (nome, tipo ('mensalista' ou 'intermitente'))
-- empresa (nome, cnpj)
-- competencia (mes - em extenso em português ex: 'Outubro', ano)
-- valores (salario_bruto, salario_liquido, total_descontos, total_adicionais (soma dos proventos além do salário bruto comum), inss, fgts, horas_extras_valor, adicional_noturno_valor, bonus)
-- trabalho (dias_trabalhados, horas_trabalhadas, horas_extras, horas_noturnas, media_por_dia (liquido dividido por dias_trabalhados), media_por_hora (liquido dividido por horas_trabalhadas))
-- itens (lista de cada linha no contracheque: { nome, tipo ('provento' ou 'desconto'), valor, referencia })
-- alertas (lista de objetos { tipo ('atenção', 'info', 'perigo'), mensagem } alertando sobre descontos acentuados, imposto proporcional alto, ou comparado a médias)
-- resumo_ia (uma explicação global e simples de entender para o trabalhador entender suas contas)
-- campos_ausentes (uma lista de strings indicando os campos específicos que não foram encontrados ou estão ausentes/nulos, ex: ["empresa.nome", "trabalho.dias_trabalhados", "valores.salario_liquido"])
-- validacao_multipla (um objeto avaliando se os documentos pertencem ao mesmo mês, trabalhador e pagamento, com: status='ok', motivo='Apenas um holerite', mesma_competencia=true, mesma_empresa=true, mesmo_trabalhador=true, documentos_relacionados=true, deve_consolidar=true, tipo_consolidacao='unica')
+- trabalhador (nome - nome completo real, tipo - 'mensalista' ou 'intermitente'. Deixe null se não identificado, NÃO invente!)
+- empresa (nome - razão social ou fantasia real, cnpj - cnpj real. Deixe null se não identificado)
+- competencia (mes - em extenso em português ex: 'Outubro', ano, data_credito - formato DD/MM/AAAA se visível, tipo_processamento - ex: 'Mensal Folha', 'Adiantamento', 'Férias', '13º Salário')
+- valores:
+  * salario_bruto (salário base/salário do contrato ou provento principal do cargo)
+  * salario_liquido (salário líquido final, o valor que o funcionário efetivamente recebe em conta - geralmente escrito como 'Líquido' ou 'Valor Líquido')
+  * total_proventos (a soma total dos proventos/ganhos positivos antes de deduções)
+  * total_descontos (a soma total de todos os descontos aplicados)
+  * total_adicionais (soma dos proventos além do salário bruto comum - ex: bônus, adicionais, horas extras)
+  * inss (valor deduzido ou recolhido para INSS)
+  * fgts (valor de base ou depósito calculado de FGTS)
+  * horas_extras_valor (valor total recebido pelas horas extras executadas)
+  * adicional_noturno_valor (valor recebido referente ao adicional noturno)
+  * bonus (valor recebido como bônus ou gratificações de performance)
+  * dsr_valor (valor recebido referente a Descanso Semanal Remunerado / DSR)
+  * ferias_valor (valor referente a pagamento de férias)
+  * terco_ferias_valor (valor de 1/3 extra de férias)
+  * decimo_terceiro_valor (provento referente a 13º salário)
+  * vale_transporte_valor (valor descontado pelo vale transporte)
+  * seguro_vida_valor (valor descontado pelo seguro de vida de grupo)
+  * saldo_devedor_valor (desconto de saldo devedor ou insuficiência de saldo anterior)
+  * adiantamento_valor (valor descontado a título de adiantamento de salário anterior)
+- trabalho:
+  * dias_trabalhados (quantidade de dias trabalhados no mês, somente se especificado explicitamente, ex: 'DIAS: 30' ou 'DIAS: 22'. Se não indicado explicitamente, retorne null)
+  * horas_trabalhadas (quantidade total de horas normais trabalhadas. Ex: se no recibo tiver 'Horas Trabalhadas' com referência ex: '160,00' ou '83,50', extraia essa quantidade como horas_trabalhadas)
+  * horas_extras (quantidade de horas extras. Ex: se disser 'Horas Extras 50%' com referência '10,00', extraia 10.0)
+  * horas_noturnas (quantidade de horas noturnas realizadas com adicional. Ex: se disser 'Adicional Noturno 20%' com referência '22,50', extraia 22.50)
+  * horas_dsr_intermitente (quantidade de horas referentes a DSR, comumente demonstrado em contratos de intermitente como 'Horas D.S.R' com uma referência ex: '6,00')
+  * media_por_dia (liquido dividido por dias_trabalhados se ambos estiverem disponíveis)
+  * media_por_hora (liquido dividido por horas_trabalhadas se ambos estiverem disponíveis)
+- itens (lista minuciosa de cada linha/rubrica de lançamento descrita no corpo principal do contracheque: { nome, tipo ('provento' ou 'desconto'), valor, referencia })
+- alertas (lista de objetos { tipo ('atenção', 'info', 'perigo'), mensagem } alertando sobre descontos acentuados, imposto de renda, ou comparações)
+- resumo_ia (uma explicação personalizada e extremamente humana para o trabalhador entender seus créditos e débitos)
+- campos_ausentes (uma lista de strings indicando os campos que realmente não foram identificados visivelmente no documento)
+- validacao_multipla (objeto de controle com status='ok', motivo='Apenas um holerite', mesma_competencia=true, mesma_empresa=true, mesmo_trabalhador=true, documentos_relacionados=true, deve_consolidar=true, tipo_consolidacao='unica')
 
-Importante: Não invente dados. Se não encontrar dias trabalhados, horas trabalhadas, empresa, salário líquido ou qualquer outro campo, retorne null. Não use valores padrão como 22 dias ou 176 horas. Os valores devem ser numéricos.`;
+REGRAS CRÍTICAS DE EXTRAÇÃO:
+1. Extraia tudo exatamente conforme escrito no contracheque. NÃO invente dias trabalhados (mantenha null se não encontrar), NÃO invente horas trabalhadas (mantenha null se não encontrar), NÃO invente nomes de trabalhadores ou empresas. NÃO use valores padrão (como 22 dias ou 176 horas) se não estiverem presentes de forma textual.
+2. Identifique os itens de proventos e descontos detalhadamente no vetor "itens".
+3. Mantenha os valores coerentes com os valores de Totais do contracheque.`;
 
   for (const file of incomingFiles) {
     if (!file.fileData) continue;
@@ -358,30 +398,31 @@ Importante: Não invente dados. Se não encontrar dias trabalhados, horas trabal
         tipo_consolidacao: "unica"
       };
       analyzedResults.push(mockResult);
-    } else if (!apiKey || apiKey === "MY_GEMINI_API_KEY") {
-      console.log(`[Contracheque AI Server] Sem chave API. Simulando processo para arquivo real: ${file.name}`);
-      const mockResult = getMockPayload(file.name, file.mimeType);
-      mockResult.validacao_multipla = {
-        status: "ok",
-        motivo: "Sem chave API real, decodificação em modo de demonstração simulado.",
-        mesma_competencia: true,
-        mesma_empresa: true,
-        mesmo_trabalhador: true,
-        documentos_relacionados: true,
-        deve_consolidar: true,
-        tipo_consolidacao: "unica"
-      };
-      analyzedResults.push(mockResult);
     } else {
+      if (!apiKey || apiKey === "MY_GEMINI_API_KEY") {
+        console.warn(`[Contracheque AI Server] Sem chave API configurada para analisar arquivo real: ${file.name}`);
+        return res.status(422).json({
+          error: "Não foi possível extrair os dados deste contracheque. Tente enviar uma imagem/PDF mais nítido."
+        });
+      }
+
       let lastError: any = null;
       let success = false;
       let response: any = null;
-      const maxRetries = 3;
-      let currentDelay = 1000; // start with 1 second
+      const maxRetries = 5;
+      let currentDelay = 1500; // start with 1.5 seconds
 
       for (let attempt = 1; attempt <= maxRetries; attempt++) {
         try {
-          console.log(`[Contracheque AI Server] Enviando ${file.name} ao Gemini API (Tentativa ${attempt}/${maxRetries})...`);
+          // Fall back gracefully to different stable model variants if primary is experiencing high demand (503)
+          let selectedModel = "gemini-3.5-flash";
+          if (attempt === 2 || attempt === 4) {
+            selectedModel = "gemini-3.1-flash-lite";
+          } else if (attempt === 3) {
+            selectedModel = "gemini-flash-latest";
+          }
+
+          console.log(`[Contracheque AI Server] Enviando ${file.name} ao Gemini API usando ${selectedModel} (Tentativa ${attempt}/${maxRetries})...`);
           
           let rawBase64 = file.fileData;
           if (file.fileData.includes('base64,')) {
@@ -400,7 +441,7 @@ Importante: Não invente dados. Se não encontrar dias trabalhados, horas trabal
           const parsedMime = file.mimeType || "image/png";
 
           response = await ai.models.generateContent({
-            model: "gemini-3.5-flash",
+            model: selectedModel,
             contents: [
               {
                 inlineData: {
@@ -422,10 +463,13 @@ Importante: Não invente dados. Se não encontrar dias trabalhados, horas trabal
           lastError = err;
           console.warn(`[Contracheque AI Server] Tentativa ${attempt} falhou para ${file.name}. Erro: ${err.message || err}`);
           
-          const errorMsg = String(err.message || "").toLowerCase();
+          const errStr = (err?.message || "") + " " + (err?.status || "") + " " + JSON.stringify(err);
+          const errorMsg = errStr.toLowerCase();
           const isTransient = 
-            err.status === 503 || 
-            err.status === 429 ||
+            err?.status === 503 || 
+            err?.status === 429 ||
+            err?.statusCode === 503 ||
+            err?.statusCode === 429 ||
             errorMsg.includes("503") || 
             errorMsg.includes("429") || 
             errorMsg.includes("unavailable") || 
@@ -465,44 +509,16 @@ Importante: Não invente dados. Se não encontrar dias trabalhados, horas trabal
           analyzedResults.push(resultObj);
         } catch (parseErr: any) {
           console.error(`[Contracheque AI Server] Erro ao tratar parse de JSON retornado pelo Gemini para ${file.name}:`, parseErr);
-          const fallback = getMockPayload(file.name, file.mimeType);
-          fallback.alertas.unshift({
-            tipo: "atenção",
-            mensagem: `Aviso: Análise simulada devido a falha de formatação do JSON retornado pela IA.`
+          return res.status(422).json({
+            error: "Não foi possível extrair os dados deste contracheque. Tente enviar uma imagem/PDF mais nítido."
           });
-          fallback.id = `pc-fallback-${Date.now()}`;
-          fallback.validacao_multipla = {
-            status: "ok",
-            motivo: `Simulada devido a falha de leitura do JSON retornado: ${parseErr.message}`,
-            mesma_competencia: true,
-            mesma_empresa: true,
-            mesmo_trabalhador: true,
-            documentos_relacionados: true,
-            deve_consolidar: true,
-            tipo_consolidacao: "unica"
-          };
-          analyzedResults.push(fallback);
         }
       } else {
         const err = lastError || new Error("Unknown Gemini API error");
         console.error(`[Contracheque AI Server] Erro persistente ao analisar ${file.name} via Gemini API:`, err);
-        const fallback = getMockPayload(file.name, file.mimeType);
-        fallback.alertas.unshift({
-          tipo: "atenção",
-          mensagem: `Aviso: Análise simulada gerada em modo demonstração (fallback) devido a instabilidades temporárias no servidor da IA.`
+        return res.status(422).json({
+          error: "Não foi possível extrair os dados deste contracheque. Tente enviar uma imagem/PDF mais nítido."
         });
-        fallback.id = `pc-fallback-${Date.now()}`;
-        fallback.validacao_multipla = {
-          status: "ok",
-          motivo: `Simulada devido a erro temporário/persistente da API: ${err.message}`,
-          mesma_competencia: true,
-          mesma_empresa: true,
-          mesmo_trabalhador: true,
-          documentos_relacionados: true,
-          deve_consolidar: true,
-          tipo_consolidacao: "unica"
-        };
-        analyzedResults.push(fallback);
       }
     }
   }

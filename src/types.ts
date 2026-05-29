@@ -11,6 +11,8 @@ export interface Empresa {
 export interface Competencia {
   mes: string | null;
   ano: string | null;
+  data_credito?: string | null;
+  tipo_processamento?: string | null;
 }
 
 export interface Valores {
@@ -23,6 +25,15 @@ export interface Valores {
   horas_extras_valor: number | null;
   adicional_noturno_valor: number | null;
   bonus: number | null;
+  total_proventos?: number | null;
+  dsr_valor?: number | null;
+  ferias_valor?: number | null;
+  terco_ferias_valor?: number | null;
+  decimo_terceiro_valor?: number | null;
+  vale_transporte_valor?: number | null;
+  seguro_vida_valor?: number | null;
+  saldo_devedor_valor?: number | null;
+  adiantamento_valor?: number | null;
 }
 
 export interface Trabalho {
