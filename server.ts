@@ -199,31 +199,305 @@ function parseFilenameCompetencia(filename: string) {
   };
 }
 
+const IS_DEVELOPMENT_SIMULATION = false;
+
+function parseBrazilianNumber(val: any): number | null {
+  if (val === null || val === undefined) return null;
+  if (typeof val === 'number') return val;
+  const str = String(val).trim();
+  if (!str) return null;
+  
+  // Replace currency symbols and spaces
+  let normalized = str.replace(/[R$\s]/g, "");
+  
+  if (normalized.includes(',') && normalized.includes('.')) {
+    if (normalized.indexOf('.') < normalized.indexOf(',')) {
+      normalized = normalized.replace(/\./g, "").replace(",", ".");
+    } else {
+      normalized = normalized.replace(/,/g, "");
+    }
+  } else if (normalized.includes(',')) {
+    normalized = normalized.replace(",", ".");
+  }
+  
+  const parsed = parseFloat(normalized);
+  return isNaN(parsed) ? null : parsed;
+}
+
+function healAndValidatePaycheck(data: any): any {
+  if (!data) return data;
+  
+  // Initialize nested objects if they are missing
+  if (!data.trabalhador) data.trabalhador = {};
+  if (!data.empresa) data.empresa = {};
+  if (!data.competencia) data.competencia = {};
+  if (!data.valores) data.valores = {};
+  if (!data.trabalho) data.trabalho = {};
+  if (!data.itens) data.itens = [];
+  if (!data.alertas) data.alertas = [];
+  if (!data.campos_ausentes) data.campos_ausentes = [];
+
+  // Parse all high level numeric properties using parseBrazilianNumber
+  const valKeys = [
+    'salario_bruto', 'salario_liquido', 'total_descontos', 'total_proventos', 'total_adicionais', 
+    'inss', 'fgts', 'horas_extras_valor', 'adicional_noturno_valor', 'bonus',
+    'dsr_valor', 'ferias_valor', 'terco_ferias_valor', 
+    'decimo_terceiro_valor', 'vale_transporte_valor', 'seguro_vida_valor', 
+    'saldo_devedor_valor', 'adiantamento_valor'
+  ];
+  valKeys.forEach(k => {
+    if (data.valores[k] !== undefined && data.valores[k] !== null) {
+      data.valores[k] = parseBrazilianNumber(data.valores[k]);
+    } else {
+      data.valores[k] = null;
+    }
+  });
+
+  const trabKeys = [
+    'dias_trabalhados', 'horas_trabalhadas', 'horas_extras', 
+    'horas_noturnas', 'horas_dsr_intermitente', 'media_por_dia', 'media_por_hora'
+  ];
+  trabKeys.forEach(k => {
+    if (data.trabalho[k] !== undefined && data.trabalho[k] !== null) {
+      data.trabalho[k] = parseBrazilianNumber(data.trabalho[k]);
+    } else {
+      data.trabalho[k] = null;
+    }
+  });
+
+  // Normalize each item inside itens
+  data.itens = data.itens.map((it: any) => {
+    return {
+      nome: it?.nome ? String(it.nome).trim() : "",
+      tipo: it?.tipo ? String(it.tipo).trim().toLowerCase() : "provento",
+      valor: parseBrazilianNumber(it?.valor) || 0,
+      referencia: it?.referencia ? String(it.referencia).trim() : null
+    };
+  });
+
+  // HEALING / DERIVING FROM Detailed ITENS
+  // Sweep the items array to extract missing parameters
+  data.itens.forEach((it: any) => {
+    const name = it.nome.toLowerCase();
+    const isDesconto = it.tipo === 'desconto';
+    const isProvento = it.tipo === 'provento';
+    
+    // Exact or partial numeric extracting from references or content
+    let refNum: number | null = null;
+    if (it.referencia) {
+      const cleanRef = it.referencia.replace(':', ',');
+      const match = cleanRef.match(/([\d.,]+)/);
+      if (match) {
+        refNum = parseBrazilianNumber(match[1]);
+      }
+    }
+
+    // 1. INSS
+    if (isDesconto && (name.includes('inss') || name.includes('previdencia social') || name.includes('prev. social')) && data.valores.inss === null) {
+      data.valores.inss = it.valor;
+    }
+    // 2. FGTS
+    if (name.includes('fgts') && data.valores.fgts === null) {
+      data.valores.fgts = it.valor;
+    }
+    // 3. Val Trans
+    if (isDesconto && (name.includes('vale transporte') || name.includes('desc. vt') || name.includes('vt ') || name.includes('vale transp')) && data.valores.vale_transporte_valor === null) {
+      data.valores.vale_transporte_valor = it.valor;
+    }
+    // 4. Adicional Noturno Hours and Value
+    if (isProvento && (name.includes('adicional noturno') || name.includes('adic. noturno') || name.includes('adic.noturno') || name.includes('noturno'))) {
+      if (data.valores.adicional_noturno_valor === null) {
+        data.valores.adicional_noturno_valor = it.valor;
+      }
+      if (data.trabalho.horas_noturnas === null && refNum !== null) {
+        data.trabalho.horas_noturnas = refNum;
+      }
+    }
+    // 5. Horas Extras Hours and Value
+    if (isProvento && (name.includes('hora extra') || name.includes('horas extras') || name.includes('h.extra') || name.includes('h. extras'))) {
+      if (data.trabalho.horas_extras === null && refNum !== null) {
+        data.trabalho.horas_extras = refNum;
+      }
+      if (data.valores.horas_extras_valor === null) {
+        data.valores.horas_extras_valor = it.valor;
+      }
+    }
+    // 6. Horas DSR Intermitente
+    if (isProvento && (name.includes('dsr') || name.includes('d.s.r') || name.includes('descanso semanal') || name.includes('rsd') || name.includes('r.s.d.'))) {
+      if (data.trabalho.horas_dsr_intermitente === null && refNum !== null) {
+        data.trabalho.horas_dsr_intermitente = refNum;
+      }
+      if (data.valores.dsr_valor === null) {
+        data.valores.dsr_valor = it.valor;
+      }
+    }
+    // 7. Salário Base / Bruto
+    if (isProvento && (name.includes('salario base') || name.includes('salario contratual') || name.includes('vencimento') || name.includes('horas normais') || name.includes('horas normais e repousos')) && data.valores.salario_bruto === null) {
+      data.valores.salario_bruto = it.valor;
+      if (data.trabalho.horas_trabalhadas === null && refNum !== null && refNum > 40) {
+        data.trabalho.horas_trabalhadas = refNum;
+      }
+    }
+    // 8. Décimo Terceiro
+    if (isProvento && (name.includes('13º') || name.includes('decimo terceiro') || name.includes('13. salario') || name.includes('13o')) && data.valores.decimo_terceiro_valor === null) {
+      data.valores.decimo_terceiro_valor = it.valor;
+    }
+    // 9. Férias Valor
+    if (isProvento && name.includes('ferias') && !name.includes('1/3') && !name.includes('terco') && data.valores.ferias_valor === null) {
+      data.valores.ferias_valor = it.valor;
+    }
+    // 10. 1/3 Férias
+    if (isProvento && (name.includes('1/3') || name.includes('terco')) && name.includes('ferias') && data.valores.terco_ferias_valor === null) {
+      data.valores.terco_ferias_valor = it.valor;
+    }
+    // 11. Adiantamento
+    if (isDesconto && (name.includes('adiantamento') || name.includes('desc. adiantamento') || name.includes('desc. adto')) && data.valores.adiantamento_valor === null) {
+      data.valores.adiantamento_valor = it.valor;
+    }
+    // 12. Seguro de Vida
+    if (isDesconto && (name.includes('seguro de vida') || name.includes('seg. vida')) && data.valores.seguro_vida_valor === null) {
+      data.valores.seguro_vida_valor = it.valor;
+    }
+    // 13. Líquido (se estiver nas linhas de itens de forma informativa)
+    if (name.includes('liquido') || name.includes('liquido a pagar') || name.includes('valor liquido')) {
+      if (data.valores.salario_liquido === null) {
+        data.valores.salario_liquido = it.valor;
+      }
+    }
+  });
+
+  // Calculate totals if they are null or 0
+  const proventosSum = data.itens
+    .filter((it: any) => it.tipo === 'provento')
+    .reduce((sum: number, it: any) => sum + it.valor, 0);
+  const descontosSum = data.itens
+    .filter((it: any) => it.tipo === 'desconto')
+    .reduce((sum: number, it: any) => sum + it.valor, 0);
+
+  if (data.valores.total_proventos === null || data.valores.total_proventos === 0) {
+    data.valores.total_proventos = Number(proventosSum.toFixed(2));
+  }
+  if (data.valores.total_descontos === null || data.valores.total_descontos === 0) {
+    data.valores.total_descontos = Number(descontosSum.toFixed(2));
+  }
+
+  // Calculate salary bruto as the main/highest primary provento if missing
+  if (data.valores.salario_bruto === null || data.valores.salario_bruto === 0) {
+    const baseProvento = data.itens.find((it: any) => 
+      it.tipo === 'provento' && 
+      (it.nome.toLowerCase().includes('salario') || it.nome.toLowerCase().includes('vencimento') || it.nome.toLowerCase().includes('base'))
+    );
+    data.valores.salario_bruto = baseProvento ? baseProvento.valor : Number(proventosSum.toFixed(2));
+  }
+
+  // If liquido is missing, try computing proventosSum - descontosSum
+  if (data.valores.salario_liquido === null || data.valores.salario_liquido === 0) {
+    const computedLiquido = Number((proventosSum - descontosSum).toFixed(2));
+    data.valores.salario_liquido = computedLiquido > 0 ? computedLiquido : null;
+  }
+
+  // Calculate total adicionais if null
+  if (data.valores.total_adicionais === null || data.valores.total_adicionais === 0) {
+    const adsSum = data.itens
+      .filter((it: any) => it.tipo === 'provento' && !it.nome.toLowerCase().includes('salario base') && !it.nome.toLowerCase().includes('vencimento'))
+      .reduce((sum: number, it: any) => sum + it.valor, 0);
+    data.valores.total_adicionais = Number(adsSum.toFixed(2));
+  }
+
+  // Recalculate averages if needed
+  if (data.trabalho.media_por_dia === null && data.valores.salario_liquido && data.trabalho.dias_trabalhados) {
+    data.trabalho.media_por_dia = Number((data.valores.salario_liquido / data.trabalho.dias_trabalhados).toFixed(2));
+  }
+  if (data.trabalho.media_por_hora === null && data.valores.salario_liquido && data.trabalho.horas_trabalhadas) {
+    data.trabalho.media_por_hora = Number((data.valores.salario_liquido / data.trabalho.horas_trabalhadas).toFixed(2));
+  }
+
+  // Generate extraction logs
+  const campos_extraidos: string[] = [];
+  const campos_ausentes: string[] = [];
+
+  if (data.trabalhador?.nome) campos_extraidos.push("trabalhador.nome");
+  else campos_ausentes.push("trabalhador.nome");
+
+  if (data.trabalhador?.tipo) campos_extraidos.push("trabalhador.tipo");
+  else campos_ausentes.push("trabalhador.tipo");
+
+  if (data.empresa?.nome) campos_extraidos.push("empresa.nome");
+  else campos_ausentes.push("empresa.nome");
+
+  if (data.empresa?.cnpj) campos_extraidos.push("empresa.cnpj");
+  else campos_ausentes.push("empresa.cnpj");
+
+  if (data.competencia?.mes) campos_extraidos.push("competencia.mes");
+  else campos_ausentes.push("competencia.mes");
+
+  if (data.competencia?.ano) campos_extraidos.push("competencia.ano");
+  else campos_ausentes.push("competencia.ano");
+
+  if (data.competencia?.data_credito) campos_extraidos.push("competencia.data_credito");
+  else campos_ausentes.push("competencia.data_credito");
+
+  if (data.valores?.salario_bruto) campos_extraidos.push("valores.salario_bruto");
+  else campos_ausentes.push("valores.salario_bruto");
+
+  if (data.valores?.salario_liquido) campos_extraidos.push("valores.salario_liquido");
+  else campos_ausentes.push("valores.salario_liquido");
+
+  if (data.valores?.total_descontos) campos_extraidos.push("valores.total_descontos");
+  else campos_ausentes.push("valores.total_descontos");
+
+  if (data.valores?.inss) campos_extraidos.push("valores.inss");
+  else campos_ausentes.push("valores.inss");
+
+  if (data.valores?.fgts) campos_extraidos.push("valores.fgts");
+  else campos_ausentes.push("valores.fgts");
+
+  if (data.trabalho?.dias_trabalhados) campos_extraidos.push("trabalho.dias_trabalhados");
+  else campos_ausentes.push("trabalho.dias_trabalhados");
+
+  if (data.trabalho?.horas_trabalhadas) campos_extraidos.push("trabalho.horas_trabalhadas");
+  else campos_ausentes.push("trabalho.horas_trabalhadas");
+
+  if (data.trabalho?.horas_dsr_intermitente) campos_extraidos.push("trabalho.horas_dsr_intermitente");
+  else campos_ausentes.push("trabalho.horas_dsr_intermitente");
+
+  if (data.trabalho?.horas_noturnas) campos_extraidos.push("trabalho.horas_noturnas");
+  else campos_ausentes.push("trabalho.horas_noturnas");
+
+  data.campos_extraidos = campos_extraidos;
+  data.campos_ausentes = campos_ausentes;
+
+  console.log(`[Contracheque AI Server] [LOG EXTRAÇÃO] Sucesso: ${campos_extraidos.join(', ')}`);
+  console.log(`[Contracheque AI Server] [LOG EXTRAÇÃO] Ausentes: ${campos_ausentes.join(', ')}`);
+
+  return data;
+}
+
 function getFallbackPayload(fileName: string): any {
   const comp = parseFilenameCompetencia(fileName);
   return {
     trabalhador: {
-      nome: "Trabalhador",
-      tipo: "mensalista"
+      nome: null,
+      tipo: null
     },
     empresa: {
-      nome: "",
-      cnpj: ""
+      nome: null,
+      cnpj: null
     },
     competencia: {
       mes: comp.mes,
       ano: comp.ano,
-      data_credito: "",
+      data_credito: null,
       tipo_processamento: "Mensal"
     },
     valores: {
-      salario_bruto: 0,
-      salario_liquido: 0,
-      total_descontos: 0,
-      total_proventos: 0,
-      total_adicionais: 0,
-      inss: 0,
-      fgts: 0
+      salario_bruto: null,
+      salario_liquido: null,
+      total_descontos: null,
+      total_proventos: null,
+      total_adicionais: null,
+      inss: null,
+      fgts: null
     },
     trabalho: {
       dias_trabalhados: null,
@@ -239,7 +513,7 @@ function getFallbackPayload(fileName: string): any {
         mensagem: "Os servidores da IA do Gemini estão sob alta demanda temporária. Entramos no modo seguro de preenchimento assistido para que você possa continuar sem interrupções."
       }
     ],
-    resumo_ia: `Lemos o arquivo "${fileName}" com sucesso, mas os servidores de IA (Gemini) estão temporariamente sobrecarregados (Erro 503). Ativamos o modo de preenchimento assistido para que você possa declarar e ajustar os seus dados manualmente acima.`,
+    resumo_ia: `Lemos o arquivo "${fileName}" com sucesso, mas os servidores de IA (Gemini) estão temporariamente sobrecarregados. Ativamos o modo de preenchimento assistido para que você possa declarar e ajustar os seus dados manualmente acima.`,
     campos_ausentes: ["trabalhador.nome", "empresa.nome", "valores.salario_bruto", "valores.salario_liquido"],
     validacao_multipla: {
       status: "ok",
@@ -502,25 +776,32 @@ REGRAS CRÍTICAS DE EXTRAÇÃO:
     if (!file.fileData) continue;
 
     if (file.simulated) {
-      console.log(`[Contracheque AI Server] Processando arquivo simulado: ${file.name}`);
-      const mockResult = getMockPayload(file.name, file.mimeType);
-      mockResult.validacao_multipla = {
-        status: "ok",
-        motivo: "Apenas um arquivo processado.",
-        mesma_competencia: true,
-        mesma_empresa: true,
-        mesmo_trabalhador: true,
-        documentos_relacionados: true,
-        deve_consolidar: true,
-        tipo_consolidacao: "unica"
-      };
-      analyzedResults.push(mockResult);
+      if (IS_DEVELOPMENT_SIMULATION) {
+        console.log(`[Contracheque AI Server] Processando arquivo simulado para Dev/Teste: ${file.name}`);
+        const mockResult = getMockPayload(file.name, file.mimeType);
+        mockResult.validacao_multipla = {
+          status: "ok",
+          motivo: "Apenas um arquivo processado.",
+          mesma_competencia: true,
+          mesma_empresa: true,
+          mesmo_trabalhador: true,
+          documentos_relacionados: true,
+          deve_consolidar: true,
+          tipo_consolidacao: "unica"
+        };
+        analyzedResults.push(healAndValidatePaycheck(mockResult));
+      } else {
+        console.log(`[Contracheque AI Server] Arquivo simulado em ambiente de produção. Retornando template limpo sem fakes.`);
+        const fallbackObj = getFallbackPayload(file.name);
+        fallbackObj.id = `pc-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
+        analyzedResults.push(healAndValidatePaycheck(fallbackObj));
+      }
     } else {
       if (!apiKey || apiKey === "MY_GEMINI_API_KEY") {
         console.warn(`[Contracheque AI Server] Sem chave API configurada para analisar arquivo real: ${file.name}. Ativando fallback assistido.`);
         const fallbackObj = getFallbackPayload(file.name);
         fallbackObj.id = `pc-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
-        analyzedResults.push(fallbackObj);
+        analyzedResults.push(healAndValidatePaycheck(fallbackObj));
         continue;
       }
 
@@ -532,12 +813,16 @@ REGRAS CRÍTICAS DE EXTRAÇÃO:
 
       for (let attempt = 1; attempt <= maxRetries; attempt++) {
         try {
-          // Fall back gracefully to different stable model variants if primary is experiencing high demand (503)
+          // Fall back gracefully to different stable model variants if primary is experiencing high demand (503) or rate limits/exhausted (429)
           let selectedModel = "gemini-3.5-flash";
-          if (attempt === 2 || attempt === 4) {
+          if (attempt === 2) {
             selectedModel = "gemini-3.1-flash-lite";
           } else if (attempt === 3) {
             selectedModel = "gemini-flash-latest";
+          } else if (attempt === 4) {
+            selectedModel = "gemini-3.5-flash";
+          } else if (attempt === 5) {
+            selectedModel = "gemini-3.1-flash-lite";
           }
 
           console.log(`[Contracheque AI Server] Enviando ${file.name} ao Gemini API usando ${selectedModel} (Tentativa ${attempt}/${maxRetries})...`);
@@ -596,10 +881,27 @@ REGRAS CRÍTICAS DE EXTRAÇÃO:
             errorMsg.includes("rate limit") || 
             errorMsg.includes("exhausted");
 
+          let waitTimeMs = currentDelay;
+          const secondsMatch = errorMsg.match(/please retry in ([\d\.]+)s/);
+          if (secondsMatch && secondsMatch[1]) {
+            const parsedSec = parseFloat(secondsMatch[1]);
+            if (!isNaN(parsedSec)) {
+              waitTimeMs = Math.max(waitTimeMs, Math.ceil(parsedSec * 1000) + 500);
+            }
+          } else {
+            const delayMatch = errorMsg.match(/"retrydelay"\s*:\s*"(\d+)s"/);
+            if (delayMatch && delayMatch[1]) {
+              const parsedSec = parseInt(delayMatch[1], 10);
+              if (!isNaN(parsedSec)) {
+                waitTimeMs = Math.max(waitTimeMs, (parsedSec * 1000) + 1000);
+              }
+            }
+          }
+
           if (isTransient && attempt < maxRetries) {
-            console.log(`[Contracheque AI Server] Erro transiente de rede/demanda detectado. Retentando em ${currentDelay}ms...`);
-            await new Promise(resolve => setTimeout(resolve, currentDelay));
-            currentDelay *= 2; // exponential backoff
+            console.log(`[Contracheque AI Server] Erro transiente de rede/demanda detectado (Tentativa ${attempt}). Retentando em ${waitTimeMs}ms...`);
+            await new Promise(resolve => setTimeout(resolve, waitTimeMs));
+            currentDelay = Math.max(currentDelay * 2, waitTimeMs); // adjust next base delay
           } else {
             // Unrecoverable error or out of retries
             break;
@@ -624,13 +926,15 @@ REGRAS CRÍTICAS DE EXTRAÇÃO:
               tipo_consolidacao: "unica"
             };
           }
-          analyzedResults.push(resultObj);
+          // Highlight extracted fields vs missing ones, heal values
+          const healedObj = healAndValidatePaycheck(resultObj);
+          analyzedResults.push(healedObj);
         } catch (parseErr: any) {
           console.error(`[Contracheque AI Server] Erro ao tratar parse de JSON retornado pelo Gemini para ${file.name}:`, parseErr);
           console.log(`[Contracheque AI Server] Ativando preenchimento manual assistido em função de erro de parse.`);
           const fallbackObj = getFallbackPayload(file.name);
           fallbackObj.id = `pc-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
-          analyzedResults.push(fallbackObj);
+          analyzedResults.push(healAndValidatePaycheck(fallbackObj));
         }
       } else {
         const err = lastError || new Error("Unknown Gemini API error");
@@ -638,12 +942,12 @@ REGRAS CRÍTICAS DE EXTRAÇÃO:
         console.log(`[Contracheque AI Server] Ativando preenchimento manual assistido em função de erro persistente do Gemini.`);
         const fallbackObj = getFallbackPayload(file.name);
         fallbackObj.id = `pc-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
-        analyzedResults.push(fallbackObj);
+        analyzedResults.push(healAndValidatePaycheck(fallbackObj));
       }
     }
   }
 
-  // Ensure every payload has a valid ID
+  // Ensure every payload has a valid ID and has been validated/healed
   analyzedResults.forEach((resItem, index) => {
     if (!resItem.id) {
       resItem.id = `pc-${Date.now()}-${index}`;
@@ -853,15 +1157,17 @@ REGRAS CRÍTICAS DE EXTRAÇÃO:
       });
     }
 
-    resultObj.resumo_ia = `Análise consolidada da competência de ${resultObj.competencia.mes}/${resultObj.competencia.ano} para ${resultObj.trabalhador.nome}.\n` +
+    resultObj.resumo_ia = `Análise consolidada da competência de ${resultObj.competencia.mes}/${resultObj.competencia.ano} para ${resultObj.trabalhador?.nome || 'Trabalhador'}.\n` +
       `Identificamos que os documentos enviados referem-se ao mesmo período de pagamento (Adiantamento + Fechamento Mensal).\n` +
       `Por isso, os valores não foram duplicados para evitar erros.\n` +
-      `Salário Bruto real: R$ ${resultObj.valores.salario_bruto?.toFixed(2)}.\n` +
-      `Valor líquido real de fato recebido na conta: R$ ${resultObj.valores.salario_liquido?.toFixed(2)} (já descontado o adiantamento de forma legal).`;
+      `Salário Bruto real: R$ ${resultObj.valores.salario_bruto?.toFixed(2) || '0.00'}.\n` +
+      `Valor líquido real de fato recebido na conta: R$ ${resultObj.valores.salario_liquido?.toFixed(2) || '0.00'} (já descontado o adiantamento de forma legal).`;
+
+    const finalHealedObj = healAndValidatePaycheck(resultObj);
 
     return res.json({
-      validacao_multipla: resultObj.validacao_multipla,
-      result: resultObj,
+      validacao_multipla: finalHealedObj.validacao_multipla,
+      result: finalHealedObj,
       results: analyzedResults
     });
   }
@@ -886,9 +1192,12 @@ REGRAS CRÍTICAS DE EXTRAÇÃO:
       deve_consolidar: true,
       tipo_consolidacao: "unica"
     };
+
+    const finalHealedObj = healAndValidatePaycheck(resultObj);
+
     return res.json({
-      validacao_multipla: resultObj.validacao_multipla,
-      result: resultObj,
+      validacao_multipla: finalHealedObj.validacao_multipla,
+      result: finalHealedObj,
       results: analyzedResults
     });
   }
