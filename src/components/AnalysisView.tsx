@@ -62,6 +62,7 @@ export default function AnalysisView({ currentAnalysis, onConfirm, onDiscard }: 
   const adicionalPorDia = currentAnalysis.metricas_calculadas?.adicional_por_dia ?? safeDiv(totAdicionais, diasTrabalhados);
   const adicionalNoturnoPorHora = currentAnalysis.metricas_calculadas?.adicional_noturno_por_hora ?? safeDiv(noturnasValor, noturnasQtd);
   const horasExtrasPorHora = currentAnalysis.metricas_calculadas?.horas_extras_por_hora ?? safeDiv(extrasValor, extrasQtd);
+  const ganhoPorHoraIntermitente = currentAnalysis.metricas_calculadas?.ganho_por_hora_intermitente ?? null;
 
   // Currency Formatter Format: R$ 2.779,25
   const formatBRL = (val: any) => {
@@ -122,7 +123,7 @@ export default function AnalysisView({ currentAnalysis, onConfirm, onDiscard }: 
   };
 
   const getUniqueDiscountItems = (items: any[]): any[] => {
-    const discounts = items.filter(i => i.tipo === 'desconto');
+    const discounts = items.filter(i => i.tipo === 'desconto' && !i.removido_do_calculo);
     const result: any[] = [];
     discounts.forEach(item => {
       const dupeIdx = result.findIndex(existing => areItemsDuplicate(existing, item));
@@ -395,7 +396,35 @@ export default function AnalysisView({ currentAnalysis, onConfirm, onDiscard }: 
           </div>
         )}
 
+        {/* Ganho por hora do intermitente Card */}
+        {trabalhadorTipo === 'intermitente' && (
+          <div className="bg-amber-50/40 rounded-2xl p-4 border border-amber-100 flex flex-col justify-between h-28 shadow-xs col-span-2 md:col-span-1 animate-fadeIn text-left">
+            <div className="flex flex-col gap-0.5">
+              <span className="text-[9px] font-bold text-amber-700 uppercase tracking-wider">Trabalho Intermitente</span>
+              <span className="text-[10px] font-extrabold text-slate-700 tracking-tight leading-tight">Ganho por Hora</span>
+            </div>
+            <span className="text-lg font-black text-amber-900">
+              {ganhoPorHoraIntermitente !== null ? formatBRL(ganhoPorHoraIntermitente) : "Não identificado"}
+            </span>
+          </div>
+        )}
+
       </div>
+
+      {/* Alert Banner for Intermitente Hourly Earnings */}
+      {trabalhadorTipo === 'intermitente' && (
+        <div className="bg-amber-50/50 border border-amber-100 rounded-2xl p-4 flex gap-3 text-left w-full animate-fadeIn shadow-2xs">
+          <span className="material-symbols-outlined text-amber-700 select-none text-xl">hourglass_empty</span>
+          <div>
+            <p className="text-xs font-bold text-amber-950">Ganho por Hora do Intermitente</p>
+            <p className="text-xs text-amber-900 mt-1">
+              {ganhoPorHoraIntermitente !== null 
+                ? <>Com base apenas na rubrica de horas trabalhadas, seu valor aproximado por hora foi de <strong className="text-amber-950 font-extrabold">{formatBRL(ganhoPorHoraIntermitente)}</strong>.</>
+                : "Não identificado no holerite."}
+            </p>
+          </div>
+        </div>
+      )}
 
       {/* DSR Intermitente Callout Alert */}
       {horasDsrIntermitente !== null && dsrPorHora !== null && (

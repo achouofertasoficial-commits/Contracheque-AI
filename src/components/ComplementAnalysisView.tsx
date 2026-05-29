@@ -40,7 +40,42 @@ export default function ComplementAnalysisView({ currentAnalysis, onConfirm, onD
     tipo_trabalhador: currentAnalysis.trabalhador?.tipo ?? 'mensalista',
     observacoes: '',
     horas_dsr_intermitente: currentAnalysis.trabalho?.horas_dsr_intermitente ?? null,
+    total_descontos_confirmado: null,
+    descontos_removidos_ids: [],
+    descontos_removidos_nomes: [],
   });
+
+  const [discountItems, setDiscountItems] = useState<any[]>(() => {
+    return (currentAnalysis?.itens || [])
+      .filter((it: any) => it.tipo === "desconto")
+      .map((it: any, index: number) => ({
+        ...it,
+        id: it.id || `discount-${index}`,
+        removido_do_calculo: !!it.removido_do_calculo
+      }));
+  });
+
+  const [totalDescontosText, setTotalDescontosText] = useState(() => {
+    const val = currentAnalysis.valores?.total_descontos;
+    if (val === null || val === undefined || isNaN(Number(val))) return '';
+    return Number(val).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+  });
+
+  const [isTotalDescontosEdited, setIsTotalDescontosEdited] = useState(false);
+
+  const toggleDiscountRemoval = (index: number) => {
+    setDiscountItems((prev) => {
+      const updated = prev.map((it, i) => (i === index ? { ...it, removido_do_calculo: !it.removido_do_calculo } : it));
+      
+      if (!isTotalDescontosEdited) {
+        const remainingSum = updated
+          .filter(it => !it.removido_do_calculo)
+          .reduce((sum, it) => sum + it.valor, 0);
+        setTotalDescontosText(remainingSum.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }));
+      }
+      return updated;
+    });
+  };
 
   // Local state as string for uncontrolled user typing before parses
   const [salLiqText, setSalLiqText] = useState(() => {
@@ -103,6 +138,24 @@ export default function ComplementAnalysisView({ currentAnalysis, onConfirm, onD
     const parsedNoturnas = noturnasText ? parseFloat(noturnasText.replace(',', '.')) : null;
     const parsedDsr = dsrText ? parseFloat(dsrText.replace(',', '.')) : null;
 
+    const parsedTotalDescontosInput = parseBrazilianCurrency(totalDescontosText);
+    const removedNames = discountItems
+      .filter(it => it.removido_do_calculo)
+      .map(it => it.nome);
+    const removedIds = discountItems
+      .filter(it => it.removido_do_calculo)
+      .map((it, idx) => it.id || `discount-${idx}`);
+
+    let totalDescontosConfirmed = null;
+    if (isTotalDescontosEdited) {
+      totalDescontosConfirmed = parsedTotalDescontosInput;
+    } else {
+      const remainingSum = discountItems
+        .filter(it => !it.removido_do_calculo)
+        .reduce((sum, it) => sum + it.valor, 0);
+      totalDescontosConfirmed = Number(remainingSum.toFixed(2));
+    }
+
     const data: ComplementaryAnalysisData = {
       dias_trabalhados: isNaN(Number(parsedDias)) ? null : parsedDias,
       horas_trabalhadas: isHorasTrabalhadasExtracted ? parsedHorasTrabalhadas : (isNaN(Number(parsedHoras)) ? null : parsedHoras),
@@ -112,7 +165,10 @@ export default function ComplementAnalysisView({ currentAnalysis, onConfirm, onD
       empresa_nome: isEmpresaNomeExtracted ? parsedEmpresaNome : (empresaText.trim() || null),
       tipo_trabalhador: tipoTrab || null,
       observacoes: obsText.trim() || null,
-      horas_dsr_intermitente: isHorasDsrExtracted ? parsedHorasDsr : (isNaN(Number(parsedDsr)) ? null : parsedDsr)
+      horas_dsr_intermitente: isHorasDsrExtracted ? parsedHorasDsr : (isNaN(Number(parsedDsr)) ? null : parsedDsr),
+      total_descontos_confirmado: totalDescontosConfirmed,
+      descontos_removidos_ids: removedIds,
+      descontos_removidos_nomes: removedNames
     };
 
     onConfirm(data);
@@ -421,6 +477,83 @@ export default function ComplementAnalysisView({ currentAnalysis, onConfirm, onD
               </span>
             </div>
 
+          </div>
+
+          {/* Revisar descontos encontrados */}
+          <div className="bg-slate-50/50 border border-slate-200/80 rounded-2xl p-5 space-y-4 text-left">
+            <div>
+              <h3 className="text-xs font-extrabold text-slate-900 flex items-center gap-2">
+                <span className="material-symbols-outlined text-[18px] text-rose-700 select-none">style</span>
+                Revisar descontos encontrados
+              </h3>
+              <p className="text-[10px] text-slate-500 leading-normal mt-1">
+                A IA encontrou estes descontos no holerite. Você pode remover algum item se ele não deve entrar no cálculo final.
+              </p>
+            </div>
+
+            {discountItems.length === 0 ? (
+              <p className="text-[11px] text-slate-400 italic">Nenhum desconto identificado pela IA neste holerite.</p>
+            ) : (
+              <div className="space-y-2 max-h-[220px] overflow-y-auto pr-1">
+                {discountItems.map((item, index) => (
+                  <div 
+                    key={index} 
+                    className={`flex items-center justify-between p-3 rounded-xl border transition-all ${
+                      item.removido_do_calculo 
+                        ? 'bg-slate-100/50 border-slate-200/50 opacity-60 line-through text-slate-400' 
+                        : 'bg-white border-slate-200 text-slate-850 shadow-xs'
+                    }`}
+                  >
+                    <div className="flex items-center gap-2 truncate">
+                      <span className={`material-symbols-outlined text-[16px] select-none ${item.removido_do_calculo ? 'text-slate-400' : 'text-slate-500'}`}>
+                        {item.removido_do_calculo ? 'do_not_disturb_on' : 'payments'}
+                      </span>
+                      <span className="text-xs font-semibold truncate">{item.nome}</span>
+                    </div>
+                    <div className="flex items-center gap-3 shrink-0">
+                      <span className="text-xs font-extrabold">
+                        {item.valor.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => toggleDiscountRemoval(index)}
+                        className={`p-1.5 rounded-lg transition-all ${
+                          item.removido_do_calculo 
+                            ? 'bg-emerald-50 text-emerald-700 hover:bg-emerald-100' 
+                            : 'bg-slate-100 text-slate-650 hover:bg-rose-50 hover:text-rose-600'
+                        }`}
+                        title={item.removido_do_calculo ? "Restaurar item" : "Remover do cálculo"}
+                      >
+                        <span className="material-symbols-outlined text-[16px] block select-none">
+                          {item.removido_do_calculo ? 'settings_backup_restore' : 'delete'}
+                        </span>
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* Desconto total confirmado field */}
+            <div className="pt-3 border-t border-slate-200/80 flex flex-col gap-1.5">
+              <label className="text-[11px] font-bold text-slate-700 flex items-center gap-1">
+                <span className="material-symbols-outlined text-[16px] text-slate-500 select-none">price_check</span>
+                Desconto total confirmado
+              </label>
+              <input
+                type="text"
+                placeholder="Ex: R$ 350,00"
+                value={totalDescontosText}
+                onChange={(e) => {
+                  setTotalDescontosText(e.target.value);
+                  setIsTotalDescontosEdited(true);
+                }}
+                className="bg-white border border-slate-200 rounded-xl px-3 py-2 text-xs font-semibold text-slate-800 focus:outline-none focus:border-emerald-600 focus:ring-1 focus:ring-emerald-600 transition-all max-w-[200px]"
+              />
+              <p className="text-[9px] text-slate-400">
+                Esse campo vem pré-preenchido com o total de descontos do holerite. Você pode editá-lo caso a IA tenha detectado incorretamente.
+              </p>
+            </div>
           </div>
 
           {/* Worker Observations (observacoes) */}

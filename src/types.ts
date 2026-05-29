@@ -51,6 +51,7 @@ export interface ItemContracheque {
   tipo: "provento" | "desconto";
   valor: number;
   referencia: string | null;
+  removido_do_calculo?: boolean;
 }
 
 export interface Alerta {
@@ -90,6 +91,7 @@ export interface ContrachequeAnalise {
     adicional_noturno_por_hora?: number | null;
     horas_extras_por_hora?: number | null;
     dsr_por_hora?: number | null;
+    ganho_por_hora_intermitente?: number | null;
   };
   observacoes_trabalhador?: string | null;
 }
@@ -121,5 +123,8 @@ export interface ComplementaryAnalysisData {
   tipo_trabalhador?: "mensalista" | "intermitente" | null;
   observacoes?: string | null;
   horas_dsr_intermitente?: number | null;
+  total_descontos_confirmado?: number | null;
+  descontos_removidos_ids?: string[];
+  descontos_removidos_nomes?: string[];
 }
 

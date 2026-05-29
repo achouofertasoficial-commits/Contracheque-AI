@@ -460,6 +460,7 @@ export default function App() {
     merged.empresa = { ...analysis.empresa };
     merged.valores = { ...analysis.valores };
     merged.trabalho = { ...analysis.trabalho };
+    merged.itens = (analysis.itens || []).map((it: any) => ({ ...it }));
 
     if (complements.empresa_nome !== undefined && complements.empresa_nome !== null) {
       merged.empresa.nome = complements.empresa_nome;
@@ -480,6 +481,32 @@ export default function App() {
     }
     
     merged.observacoes_trabalhador = complements.observacoes || null;
+
+    // Apply removed discounts
+    if (complements.descontos_removidos_nomes && complements.descontos_removidos_nomes.length > 0) {
+      merged.itens = merged.itens.map((it: any) => {
+        if (it.tipo === "desconto" && complements.descontos_removidos_nomes?.includes(it.nome)) {
+          return { ...it, removido_do_calculo: true };
+        }
+        return it;
+      });
+    }
+
+    // Recalculate total_descontos
+    let finalTotalDescontos = 0;
+    if (complements.total_descontos_confirmado !== null && complements.total_descontos_confirmado !== undefined) {
+      finalTotalDescontos = complements.total_descontos_confirmado;
+    } else {
+      // Sum only non-removed discounts
+      finalTotalDescontos = merged.itens
+        .filter((it: any) => it.tipo === "desconto" && !it.removido_do_calculo)
+        .reduce((sum: number, it: any) => sum + (it.valor || 0), 0);
+    }
+    merged.valores.total_descontos = Number(finalTotalDescontos.toFixed(2));
+
+    merged.descontos_removidos_ids = complements.descontos_removidos_ids || [];
+    merged.descontos_removidos_nomes = complements.descontos_removidos_nomes || [];
+    merged.total_descontos_confirmado = complements.total_descontos_confirmado;
 
     // Calculate metrics:
     const salLiq = merged.valores.salario_liquido;
@@ -506,6 +533,45 @@ export default function App() {
     const horasDsr = complements.horas_dsr_intermitente;
     const dsr_por_hora = (valor_dsr && horasDsr && horasDsr > 0) ? (valor_dsr / horasDsr) : null;
 
+    // 4. GANHO POR HORA DO INTERMITENTE
+    let ganho_por_hora_intermitente: number | null = null;
+    
+    const parseReferenceHours = (refStr: string | null): number | null => {
+      if (!refStr) return null;
+      const clean = String(refStr).replace(':', ',').trim();
+      const match = clean.match(/([\d.,]+)/);
+      if (match) {
+        let numStr = match[1];
+        if (numStr.includes(',') && numStr.includes('.')) {
+          numStr = numStr.replace(/\./g, '').replace(',', '.');
+        } else if (numStr.includes(',')) {
+          numStr = numStr.replace(',', '.');
+        }
+        const parsed = parseFloat(numStr);
+        return isNaN(parsed) ? null : parsed;
+      }
+      return null;
+    };
+
+    const targetItem = merged.itens?.find((it: any) => {
+      if (it.tipo !== "provento") return false;
+      const name = (it.nome || "").toLowerCase();
+      return (
+        name === "horas trabalhadas" ||
+        name === "horas trabalhadas - interm" ||
+        name === "horas trabalhadas - interm." ||
+        name === "horas trabalhadas - intermitente" ||
+        name.includes("horas trab")
+      );
+    });
+
+    if (targetItem) {
+      const qty = parseReferenceHours(targetItem.referencia);
+      if (qty && qty > 0) {
+        ganho_por_hora_intermitente = targetItem.valor / qty;
+      }
+    }
+
     const ganho_por_dia = (salLiq && dias && dias > 0) ? (salLiq / dias) : null;
     const ganho_por_hora = (salLiq && horas && horas > 0) ? (salLiq / horas) : null;
     const desconto_por_dia = (totDescontos && dias && dias > 0) ? (totDescontos / dias) : null;
@@ -520,7 +586,8 @@ export default function App() {
       adicional_por_dia,
       adicional_noturno_por_hora,
       horas_extras_por_hora,
-      dsr_por_hora
+      dsr_por_hora,
+      ganho_por_hora_intermitente
     };
 
     // Update the standard work averages (keep as unrounded value)
